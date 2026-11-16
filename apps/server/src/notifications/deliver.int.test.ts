@@ -1,0 +1,191 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
+import { getDb } from "../db/client";
+import { notifications, users } from "../db/schema";
+import { encryptSecret } from "../core/crypto";
+import { putSetting } from "../core/settings";
+import { createUser, resetDatabase } from "../test/helpers";
+import { setUpIntegrations } from "../test/integrations";
+import { deliverDue } from "./deliver";
+
+type Call = { url: string; body: string };
+let calls: Call[];
+let answer: (url: string, body: string) => Response;
+
+beforeEach(async () => {
+  await resetDatabase();
+  calls = [];
+  answer = (url) =>
+    url.includes("slack.test")
+      ? Response.json(
+          url.endsWith("users.lookupByEmail") ? { ok: true, user: { id: "U0OSCAR" } } : { ok: true },
+        )
+      : new Response("", { status: 202 });
+  vi.stubGlobal("fetch", async (input: string | URL, init?: RequestInit) => {
+    const url = String(input);
+    const body = init?.body instanceof URLSearchParams ? init.body.toString() : String(init?.body ?? "");
+    calls.push({ url, body });
+    return answer(url, body);
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+async function queue(values: Partial<typeof notifications.$inferInsert> = {}) {
+  const [row] = await getDb()
+    .insert(notifications)
+    .values({
+      channel: "email",
+      kind: "ticket_received",
+      recipient: "erin@example.org",
+      subject: "[#1] We received your request",
+      text: "Hello",
+      html: "<p>Hello</p>",
+      ...values,
+    })
+    .returning();
+  return row!;
+}
+
+const stateOf = async (id: string) =>
+  (await getDb().select().from(notifications).where(eq(notifications.id, id)))[0]!;
+
+describe("deliverDue", () => {
+  it("sends email over MailerSend and posts to the Slack channel", async () => {
+    await setUpIntegrations(getDb());
+    const email = await queue();
+    const post = await queue({ channel: "slack_channel", recipient: "C0HELPDESK", text: "New request #1" });
+    expect(await deliverDue()).toBe(2);
+    expect((await stateOf(email.id)).status).toBe("sent");
+    expect((await stateOf(post.id)).status).toBe("sent");
+    const mail = calls.find((call) => call.url === "http://mailersend.test/v1/email")!;
+    expect(JSON.parse(mail.body)).toMatchObject({
+      from: { email: "helpdesk@example.org", name: "Helpdesk" },
+      to: [{ email: "erin@example.org" }],
+      subject: "[#1] We received your request",
+    });
+    const slack = calls.find((call) => call.url === "http://slack.test/api/chat.postMessage")!;
+    expect(new URLSearchParams(slack.body).get("channel")).toBe("C0HELPDESK");
+    expect(new URLSearchParams(slack.body).get("text")).toBe("New request #1");
+  });
+
+  it("finds a person's Slack account by email for direct messages and remembers it", async () => {
+    await setUpIntegrations(getDb());
+    const oscar = await createUser("operator", { email: "oscar@example.org", notifyVia: "slack" });
+    const dm = await queue({
+      channel: "slack_dm",
+      recipient: "oscar@example.org",
+      recipientUserId: oscar.id,
+      text: "Assigned",
+      fallbackText: "Assigned (email)",
+    });
+    await deliverDue();
+    expect((await stateOf(dm.id)).status).toBe("sent");
+    const post = calls.find((call) => call.url.endsWith("chat.postMessage"))!;
+    expect(new URLSearchParams(post.body).get("channel")).toBe("U0OSCAR");
+    const [stored] = await getDb().select().from(users).where(eq(users.id, oscar.id));
+    expect(stored!.slackUserId).toBe("U0OSCAR");
+  });
+
+  it("emails instead when the person has no Slack account", async () => {
+    await setUpIntegrations(getDb());
+    answer = (url) =>
+      url.endsWith("users.lookupByEmail")
+        ? Response.json({ ok: false, error: "users_not_found" })
+        : new Response("", { status: 202 });
+    const dm = await queue({
+      channel: "slack_dm",
+      recipient: "oscar@example.org",
+      text: "Assigned",
+      fallbackText: "Assigned (email)",
+    });
+    await deliverDue();
+    const row = await stateOf(dm.id);
+    expect(row).toMatchObject({
+      status: "sent",
+      lastError: "No Slack account has this email address; sent by email",
+    });
+    const mail = calls.find((call) => call.url.endsWith("/email"))!;
+    expect(JSON.parse(mail.body).text).toBe("Assigned (email)");
+  });
+
+  it("emails instead when Slack refuses the direct message for good", async () => {
+    await setUpIntegrations(getDb());
+    answer = (url) =>
+      url.includes("slack.test")
+        ? Response.json({ ok: false, error: "missing_scope" })
+        : new Response("", { status: 202 });
+    const dm = await queue({
+      channel: "slack_dm",
+      recipient: "oscar@example.org",
+      text: "Assigned",
+      fallbackText: "Assigned (email)",
+    });
+    await deliverDue();
+    expect(await stateOf(dm.id)).toMatchObject({
+      status: "sent",
+      lastError: "Slack failed (missing_scope); sent by email",
+    });
+    expect(calls.some((call) => call.url.endsWith("/email"))).toBe(true);
+  });
+
+  it("retries temporary failures and gives up on permanent ones", async () => {
+    await setUpIntegrations(getDb());
+    answer = () => new Response("busy", { status: 503 });
+    const email = await queue();
+    await deliverDue();
+    let row = await stateOf(email.id);
+    expect(row).toMatchObject({
+      status: "pending",
+      attempts: 1,
+      lastError: "MailerSend answered HTTP 503 busy",
+    });
+    expect(row.nextAttemptAt.getTime()).toBeGreaterThan(Date.now());
+
+    answer = () => new Response('{"message":"The from.email domain must be verified"}', { status: 422 });
+    await getDb()
+      .update(notifications)
+      .set({ nextAttemptAt: new Date() })
+      .where(eq(notifications.id, email.id));
+    await deliverDue();
+    row = await stateOf(email.id);
+    expect(row.status).toBe("failed");
+    expect(row.attempts).toBe(2);
+  });
+
+  it("skips channels that were turned off after queuing", async () => {
+    const email = await queue();
+    await deliverDue();
+    expect(await stateOf(email.id)).toMatchObject({ status: "skipped", lastError: "Email is not set up" });
+    expect(calls).toEqual([]);
+  });
+
+  // Needs Mailpit (compose.dev.yaml, or the CI service): MAILPIT_SMTP_PORT and MAILPIT_API_URL.
+  it.skipIf(!process.env.MAILPIT_API_URL)("sends email over SMTP", async () => {
+    vi.unstubAllGlobals();
+    const subject = `SMTP test ${Date.now()}`;
+    await putSetting(getDb(), "email", {
+      provider: "smtp",
+      fromAddress: "helpdesk@example.org",
+      fromName: "Helpdesk",
+      smtp: {
+        host: "localhost",
+        port: Number(process.env.MAILPIT_SMTP_PORT ?? 1028),
+        security: "none",
+        username: "",
+        passwordEncrypted: encryptSecret("unused"),
+        passwordHint: null,
+      },
+    });
+    const email = await queue({ subject });
+    await deliverDue();
+    expect((await stateOf(email.id)).status).toBe("sent");
+    const search = await fetch(
+      `${process.env.MAILPIT_API_URL}/api/v1/search?query=${encodeURIComponent(`subject:"${subject}"`)}`,
+    );
+    const found = (await search.json()) as { messages: { Subject: string; To: { Address: string }[] }[] };
+    expect(found.messages[0]).toMatchObject({ Subject: subject, To: [{ Address: "erin@example.org" }] });
+  });
+});

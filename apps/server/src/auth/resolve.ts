@@ -1,0 +1,39 @@
+import { and, eq, gt } from "drizzle-orm";
+import { localeSchema, notifyChannelSchema, roleSchema } from "@helpdesk/shared/roles";
+import type { Db } from "../db/client";
+import { sessions, users } from "../db/schema";
+import { auth } from "./auth";
+import type { UserPrincipal } from "./principal";
+
+/** The signed-in person of a request, or null (no session, revoked session, no role). */
+export async function resolvePrincipal(db: Db, headers: Headers): Promise<UserPrincipal | null> {
+  const session = await auth().api.getSession({ headers });
+  if (!session) return null;
+  // The cookie cache can outlive a revoked session by a minute; check the row.
+  const [row] = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      name: users.name,
+      role: users.role,
+      image: users.image,
+      notifyVia: users.notifyVia,
+      locale: users.locale,
+    })
+    .from(sessions)
+    .innerJoin(users, eq(users.id, sessions.userId))
+    .where(and(eq(sessions.id, session.session.id), gt(sessions.expiresAt, new Date())));
+  if (!row) return null;
+  const role = roleSchema.safeParse(row.role);
+  if (!role.success) return null;
+  return {
+    kind: "user",
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: role.data,
+    image: row.image,
+    notifyVia: notifyChannelSchema.safeParse(row.notifyVia).data ?? "email",
+    locale: localeSchema.safeParse(row.locale).data ?? null,
+  };
+}
