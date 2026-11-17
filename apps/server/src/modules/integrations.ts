@@ -27,7 +27,6 @@ import { conflict, validationError } from "../http/errors";
 import { jsonBody, queryOf, requireSuperadmin } from "../http/middleware";
 import { createSlackApi, DeliveryError, emailTransportFor } from "../notifications/transports";
 import { testEmail } from "../notifications/templates";
-import { localeOf } from "../notifications/enqueue";
 import { iso, isoRequired } from "./util";
 
 /** Email and Slack, set up by superadmins. Secrets are stored encrypted and shown only as hints. */
@@ -96,14 +95,14 @@ router.put("/integrations/email", async (c) => {
 });
 
 router.post("/integrations/email/test", async (c) => {
-  const actor = requireSuperadmin(c);
+  requireSuperadmin(c);
   const { to } = await jsonBody(c, emailTestSchema);
   const transport = emailTransportFor(await getStoredEmail(getDb()));
   if (!transport) throw conflict("Set up email first");
   const started = Date.now();
   let result: CheckResult;
   try {
-    await transport.send({ to, ...testEmail(localeOf(actor), config().APP_NAME, config().APP_URL) });
+    await transport.send({ to, ...testEmail(config().APP_NAME, config().APP_URL) });
     result = { ok: true, message: `Sent a test email to ${to}`, latencyMs: Date.now() - started };
   } catch (error) {
     result = {

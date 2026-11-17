@@ -13,7 +13,6 @@ const operator: Me = {
   role: "operator",
   image: null,
   notifyVia: "email",
-  locale: "en",
   slackAvailable: true,
 };
 

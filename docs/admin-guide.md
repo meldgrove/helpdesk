@@ -24,6 +24,9 @@ check their answers and send them.
 - **The first page** always holds three questions that every ticket needs:
   the title, the category and the urgency. You can change their wording and
   order, not remove them.
+- **Language:** English or German. Requesters see the form's buttons,
+  messages and urgencies in it; write the questions in it too. The rest of
+  the app, emails and Slack messages are in English.
 - **Question types:** short text, long text, single choice, multiple
   choice, date, number, email, checkbox (for "I confirm …") and files.
 - **Show if:** a page or question can appear only when earlier answers
@@ -46,7 +49,7 @@ tickets keep it. At least one category stays active.
 
 - **Board:** one column per status. Drag a card to change its status or its
   order in the column; each card's menu does the same with the keyboard.
-  Done and cancelled show the last 14 days; the **All tickets** list shows
+  Done and canceled show the last 14 days; the **All tickets** list shows
   everything.
 - **A ticket** has its answers, the conversation and its activity. **Reply
   to requester** sends the requester an email; an **internal note** stays
@@ -55,7 +58,7 @@ tickets keep it. At least one category stays active.
 - **Waiting for requester:** a reply of the requester moves the ticket back
   to In progress.
 - **Done:** the requester gets an email. A reply within 14 days reopens the
-  ticket; after that, or when it was cancelled, they send a new request.
+  ticket; after that, or when it was canceled, they send a new request.
 - **New ticket:** record a request for someone, e.g. after a phone call.
   The requester gets the same email as for the form.
 
@@ -69,8 +72,7 @@ tickets keep it. At least one category stays active.
 
 Each person chooses email or Slack in **My settings**. A Slack direct
 message needs a Slack account with the same email address; otherwise the
-message goes by email. Staff get no message about their own changes. Emails
-go out in the person's language.
+message goes by email. Staff get no message about their own changes.
 
 ## Email (superadmins)
 

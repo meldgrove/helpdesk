@@ -11,7 +11,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Category, Form } from "@helpdesk/shared/api/form";
 import { DEFAULT_FORM } from "@helpdesk/shared/form";
-import { LocaleContext } from "@/i18n";
 import { stubFetch } from "@/test-utils";
 import { FormEditorPage } from "./form-editor-page";
 
@@ -51,9 +50,7 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={client}>
-      <LocaleContext.Provider value="en">
-        <RouterProvider router={router} />
-      </LocaleContext.Provider>
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
 }
@@ -109,6 +106,28 @@ describe("FormEditorPage", () => {
     const body = JSON.parse(String(put?.[1]?.body)) as { baseVersion: number; definition: { title: string } };
     expect(body.baseVersion).toBe(3);
     expect(body.definition.title).toBe("IT requests");
+  });
+
+  it("publishes the form's language", async () => {
+    const user = userEvent.setup();
+    const fetch = stubApi({
+      "GET /form": () => ({ body: form(3) }),
+      "GET /categories": () => ({ body: { items: [CATEGORY] } }),
+      "PUT /form": () => ({ body: form(4) }),
+    });
+    renderPage();
+
+    const language = await screen.findByRole("combobox", { name: "Language" });
+    expect(language).toHaveTextContent("English");
+    await user.click(language);
+    await user.click(await screen.findByRole("option", { name: "German" }));
+    expect(language).toHaveTextContent("German");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(fetch.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(true));
+    const put = fetch.mock.calls.find(([, init]) => init?.method === "PUT");
+    const body = JSON.parse(String(put?.[1]?.body)) as { definition: { language: string } };
+    expect(body.definition.language).toBe("de");
   });
 
   it("explains a conflict and offers to reload", async () => {

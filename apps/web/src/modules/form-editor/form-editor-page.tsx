@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useLocale, useT } from "@/i18n";
+import { useT } from "@/i18n";
 import { common } from "@/i18n/common";
 import { ApiError, errorMessage } from "@/lib/api";
 import { issueMessage } from "@/lib/validation";
@@ -77,7 +77,6 @@ const loaded = (form: Form): Base => ({ form, definition: normalizeDefinition(fo
 function FormEditor(props: { latest: Form; tab: FormEditorTab; onTabChange: (tab: FormEditorTab) => void }) {
   const t = useT(messages);
   const tc = useT(common);
-  const locale = useLocale();
   const queryClient = useQueryClient();
   const categoryList = useCategories();
   const publish = usePublishForm();
@@ -106,7 +105,7 @@ function FormEditor(props: { latest: Form; tab: FormEditorTab; onTabChange: (tab
   if (latest.version > base.form.version && !dirty) adopt(latest);
   const outdated = conflict || latest.version > base.form.version;
 
-  const live = useMemo(() => collectProblems(draft, (issue) => issueMessage(issue, locale)), [draft, locale]);
+  const live = useMemo(() => collectProblems(draft, issueMessage), [draft]);
   const problems = useMemo(() => dedupeProblems([...live, ...saveProblems]), [live, saveProblems]);
   const index = useMemo(() => indexProblems(problems), [problems]);
 

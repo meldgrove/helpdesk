@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { localeSchema, notifyChannelSchema, roleSchema } from "@helpdesk/shared/roles";
+import { notifyChannelSchema, roleSchema } from "@helpdesk/shared/roles";
 import type { Db } from "../db/client";
 import { users } from "../db/schema";
 import type { UserPrincipal } from "../auth/principal";
@@ -23,6 +23,5 @@ export async function resolvePrincipal(db: Db, headers: Headers): Promise<UserPr
     role: role.data,
     image: null,
     notifyVia: notifyChannelSchema.catch("email").parse(user.notifyVia),
-    locale: localeSchema.safeParse(user.locale).data ?? null,
   };
 }

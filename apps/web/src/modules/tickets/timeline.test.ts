@@ -35,13 +35,13 @@ function message(at: string, extra: Partial<Message> = {}): Message {
   };
 }
 
-function words(locale: "en" | "de"): EventWords {
-  const labels = translate(labelMessages, locale);
+function words(): EventWords {
+  const labels = translate(labelMessages, "en");
   return {
-    t: translate(messages, locale),
+    t: translate(messages, "en"),
     status: (status: Status) => labels(status),
     urgency: (urgency: Urgency) => labels(urgency),
-    date: createFormatter(locale).date,
+    date: createFormatter("en").date,
   };
 }
 
@@ -88,14 +88,12 @@ describe("mergeTimeline", () => {
 });
 
 describe("describeEvent", () => {
-  const en = words("en");
-  const de = words("de");
+  const en = words();
   const at = "2026-11-01T10:00:00.000Z";
 
-  it("translates statuses and urgencies", () => {
+  it("names statuses and urgencies", () => {
     const status = event("status_changed", at, { from: "new", to: "in_progress" }, oscar);
     expect(describeEvent(status, false, en)).toBe("Oscar Lind changed the status from New to In progress");
-    expect(describeEvent(status, false, de)).toBe("Oscar Lind hat den Status von Neu auf In Arbeit geändert");
     const urgency = event("urgency_changed", at, { from: "normal", to: "very_urgent" });
     expect(describeEvent(urgency, false, en)).toBe(
       "Alma Berger changed the urgency from Normal to Very urgent",
@@ -136,8 +134,8 @@ describe("describeEvent", () => {
     expect(describeEvent(event("created", at, { source: "form" }, erin), false, en)).toBe(
       "erin@example.org sent the request through the form",
     );
-    expect(describeEvent(event("reopened", at, { from: "done", to: "new" }, erin), false, de)).toBe(
-      "erin@example.org hat die Anfrage wieder geöffnet",
+    expect(describeEvent(event("reopened", at, { from: "done", to: "new" }, erin), false, en)).toBe(
+      "erin@example.org reopened the request",
     );
     expect(
       describeEvent(event("title_changed", at, { from: "Printer", to: "Printer broken" }), false, en),

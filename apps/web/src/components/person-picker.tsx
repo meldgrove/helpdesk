@@ -19,7 +19,6 @@ import { cn } from "@/lib/utils";
 
 const messages = defineMessages({
   en: { search: "Search people…", empty: "No one found", nobody: "Nobody", choose: "Choose a person" },
-  de: { search: "Personen suchen…", empty: "Niemand gefunden", nobody: "Niemand", choose: "Person wählen" },
 });
 
 export type PickedPerson = { id: string; name: string; email: string };

@@ -1,10 +1,12 @@
 import { CircleAlert, Info, Plus } from "lucide-react";
 import type { Form } from "@helpdesk/shared/api/form";
+import { FORM_LANGUAGES, type FormLanguage } from "@helpdesk/shared/form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/i18n";
 import { useFormatter } from "@/lib/format";
@@ -102,6 +104,27 @@ export function QuestionsTab(props: {
             />
             <FieldDescription id="form-intro-hint">{t("formIntroHint")}</FieldDescription>
             <FieldProblems messages={descriptionProblems} />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="form-language">{t("formLanguage")}</FieldLabel>
+            <Select
+              value={definition.language}
+              onValueChange={(language) =>
+                ctx.onChange(updateForm(definition, { language: language as FormLanguage }))
+              }
+            >
+              <SelectTrigger id="form-language" aria-describedby="form-language-hint" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FORM_LANGUAGES.map((language) => (
+                  <SelectItem key={language} value={language}>
+                    {t(`language_${language}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FieldDescription id="form-language-hint">{t("formLanguageHint")}</FieldDescription>
           </Field>
         </div>
       </Card>

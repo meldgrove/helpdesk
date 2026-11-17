@@ -16,16 +16,6 @@ const messages = defineMessages({
     undo: "Undo",
     writeOnly: "Write-only: the stored value is never shown again.",
   },
-  de: {
-    stored: "Gespeichert",
-    storedHint: "Gespeichert ({hint})",
-    replace: "Ersetzen",
-    keep: "Gespeicherten Wert behalten",
-    remove: "Entfernen",
-    removed: "Wird beim Speichern entfernt.",
-    undo: "Rückgängig",
-    writeOnly: "Nur schreibbar: Der gespeicherte Wert wird nie wieder angezeigt.",
-  },
 });
 
 /** A write-only secret: keep the stored one, replace it, or remove it. */

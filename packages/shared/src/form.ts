@@ -11,7 +11,15 @@ import { MAX_ATTACHMENTS_PER_MESSAGE, URGENCIES } from "./tickets";
  * Three system questions are always on the first page and always required:
  * the title, the urgency and the category. They become ticket fields; their
  * options come from the app (urgencies) and the category list.
+ *
+ * The app is in English; each form has a language (English or German) that
+ * its fixed texts follow for requesters: buttons, answer problems, urgencies.
+ * Admins write the questions in that language.
  */
+
+export const FORM_LANGUAGES = ["en", "de"] as const;
+export const formLanguageSchema = z.enum(FORM_LANGUAGES);
+export type FormLanguage = z.infer<typeof formLanguageSchema>;
 
 export const QUESTION_TYPES = [
   "short_text",
@@ -111,6 +119,7 @@ export const pageSchema = z.object({
 export type Page = z.infer<typeof pageSchema>;
 
 const formDefinitionBaseSchema = z.object({
+  language: formLanguageSchema.default("en"),
   title: z.string().trim().min(1, "Enter a title").max(200),
   description: z.string().trim().max(2000).default(""),
   pages: z.array(pageSchema).min(1).max(30),
@@ -441,6 +450,7 @@ export function newFormKey(prefix: string): string {
 
 /** The form a new installation starts with. */
 export const DEFAULT_FORM: FormDefinition = {
+  language: "en",
   title: "New request",
   description: "Tell us what you need. We will get back to you.",
   pages: [
@@ -506,39 +516,6 @@ export const DEFAULT_FORM: FormDefinition = {
           required: false,
           options: [],
           showIf: null,
-        },
-      ],
-    },
-  ],
-};
-
-/** The default form in German, for installations with DEFAULT_LOCALE=de. */
-export const DEFAULT_FORM_DE: FormDefinition = {
-  title: "Neue Anfrage",
-  description: "Sag uns, was du brauchst. Wir melden uns bei dir.",
-  pages: [
-    {
-      ...DEFAULT_FORM.pages[0]!,
-      title: "Deine Anfrage",
-      questions: [
-        {
-          ...DEFAULT_FORM.pages[0]!.questions[0]!,
-          label: "Worum geht es?",
-          help: "Ein kurzer Titel, z. B. „Neuer Laptop für eine neue Kollegin“.",
-        },
-        { ...DEFAULT_FORM.pages[0]!.questions[1]!, label: "Kategorie" },
-        { ...DEFAULT_FORM.pages[0]!.questions[2]!, label: "Wie dringend ist es?" },
-      ],
-    },
-    {
-      ...DEFAULT_FORM.pages[1]!,
-      title: "Details",
-      questions: [
-        { ...DEFAULT_FORM.pages[1]!.questions[0]!, label: "Beschreib deine Anfrage" },
-        {
-          ...DEFAULT_FORM.pages[1]!.questions[1]!,
-          label: "Anhänge",
-          help: "Optional: Dokumente oder Screenshots.",
         },
       ],
     },

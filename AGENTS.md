@@ -14,7 +14,8 @@ npm workspaces, Node.js 26, strict TypeScript.
   `/api/auth`), Drizzle ORM on PostgreSQL, nodemailer, pino logs, Sentry,
   Vitest.
 - `apps/web`: Vite + React 19, TanStack Router and Query, shadcn/ui with
-  Tailwind CSS 4, dnd-kit (board), react-hook-form with zod, en + de.
+  Tailwind CSS 4, dnd-kit (board), react-hook-form with zod. English (US); the
+  request form also in German.
 - `packages/shared` (`@helpdesk/shared/*`): zod schemas of the API
   (`api/*.ts`), roles, ticket constants, the form model and its show-if and
   answer rules (`form.ts`, used by both apps), error report redaction.
@@ -32,7 +33,7 @@ apps/server/src/
   auth/            Better Auth, session → principal, SUPERADMIN_EMAILS
   directory/       roles from groups: Keycloak Admin API sync, sign-in check, groups claim
   tickets/         ticket writes (service.ts), reads (queries.ts), stored answers
-  notifications/   outbox (enqueue.ts), templates (en, de), transports, delivery
+  notifications/   outbox (enqueue.ts), templates, transports, delivery
   attachments/     file storage on disk
   worker/          delivery loop and scheduled jobs
   http/            app factory, middleware (requireUser/requireStaff/requireAdmin/requireSuperadmin), errors
@@ -100,6 +101,7 @@ Releases: Actions → Release → Run workflow (shared Meldgrove workflow; see
 
 ## Content
 
-UI text is English with German translations (German with "du"); short and
-plain. Never commit secrets, real personal data or data from a real
+UI text, emails and Slack messages are in US English; short and plain. Only
+texts the request form shows have German too (`de`, with "du"), because admins
+choose each form's language. Never commit secrets, real personal data or data from a real
 organization: use `example.org` addresses.

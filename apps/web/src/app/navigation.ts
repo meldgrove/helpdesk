@@ -26,19 +26,6 @@ export const navMessages = defineMessages({
     integrations: "Email & Slack",
     audit: "Audit log",
   },
-  de: {
-    requests: "Anfragen",
-    newRequest: "Neue Anfrage",
-    myRequests: "Meine Anfragen",
-    work: "Tickets",
-    board: "Board",
-    tickets: "Alle Tickets",
-    admin: "Verwaltung",
-    form: "Anfrageformular",
-    people: "Personen",
-    integrations: "E-Mail & Slack",
-    audit: "Protokoll",
-  },
 });
 
 export type NavKey = keyof typeof navMessages.en;

@@ -3,7 +3,7 @@ import type { Me, MeUpdate } from "@helpdesk/shared/api/users";
 import { api } from "@/lib/api";
 import { meQuery } from "@/hooks/use-me";
 
-/** Changes the signed-in person's own settings (language for emails, how they hear about tickets). */
+/** Changes the signed-in person's own settings (how they hear about tickets). */
 export function useUpdateMe() {
   const client = useQueryClient();
   return useMutation({

@@ -1,4 +1,4 @@
-import type { Locale, NotifyChannel, Role } from "@helpdesk/shared/roles";
+import type { NotifyChannel, Role } from "@helpdesk/shared/roles";
 
 /** The signed-in person of a request (someone with access: a role). */
 export type UserPrincipal = {
@@ -9,5 +9,4 @@ export type UserPrincipal = {
   role: Role;
   image: string | null;
   notifyVia: NotifyChannel;
-  locale: Locale | null;
 };

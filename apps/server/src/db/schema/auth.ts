@@ -23,8 +23,6 @@ export const users = pgTable(
     directoryId: text("directory_id").unique(),
     /** email or slack: how assignments and requester replies reach this person. */
     notifyVia: text("notify_via").notNull().default("email"),
-    /** en or de; null: never chosen (DEFAULT_LOCALE). */
-    locale: text("locale"),
     /** The person's Slack user ID, found by email when a direct message is first sent. */
     slackUserId: text("slack_user_id"),
     lastSignInAt: timestamp("last_sign_in_at", { withTimezone: true }),

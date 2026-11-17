@@ -14,7 +14,6 @@ const superadmin: Me = {
   role: "superadmin",
   image: null,
   notifyVia: "email",
-  locale: "en",
   slackAvailable: false,
 };
 

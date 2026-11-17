@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_FORM,
-  DEFAULT_FORM_DE,
   definitionProblems,
   formDefinitionSchema,
   validateAnswers,
@@ -172,11 +171,16 @@ describe("validateAnswers", () => {
 });
 
 describe("definitionProblems", () => {
-  it("accepts the default forms", () => {
-    for (const definition of [DEFAULT_FORM, DEFAULT_FORM_DE]) {
-      expect(definitionProblems(definition)).toEqual([]);
-      expect(formDefinitionSchema.safeParse(definition).success).toBe(true);
-    }
+  it("accepts the default form", () => {
+    expect(definitionProblems(DEFAULT_FORM)).toEqual([]);
+    expect(formDefinitionSchema.safeParse(DEFAULT_FORM).success).toBe(true);
+  });
+
+  it("keeps the form's language, English unless set", () => {
+    const { language: _language, ...withoutLanguage } = DEFAULT_FORM;
+    expect(formDefinitionSchema.parse(withoutLanguage).language).toBe("en");
+    expect(formDefinitionSchema.parse({ ...DEFAULT_FORM, language: "de" }).language).toBe("de");
+    expect(formDefinitionSchema.safeParse({ ...DEFAULT_FORM, language: "fr" }).success).toBe(false);
   });
 
   it("refuses conditions on later questions, missing system questions and empty choices", () => {

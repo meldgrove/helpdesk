@@ -9,7 +9,7 @@ notes; requesters follow their requests and get emails at each step.
   when earlier answers match ("show if"), shown one page at a time. Every
   request has a title, a category and an urgency.
 - **One board** with a column per status (New, In progress, Waiting for
-  requester, Waiting for others, Done, Cancelled), drag and drop, filters by
+  requester, Waiting for others, Done, Canceled), drag and drop, filters by
   category, assignee and urgency, and a searchable list.
 - **Tickets**: assignment, due dates, replies and internal notes, files,
   activity history. A requester's reply to a done request reopens it for 14
@@ -21,7 +21,8 @@ notes; requesters follow their requests and get emails at each step.
   answered and done; new tickets are posted to a Slack channel; assignees
   hear about their tickets by email or Slack direct message. Email over
   SMTP or MailerSend, set up in the app.
-- English and German, light and dark, works on phones.
+- English (US); request forms in English or German. Light and dark, works on
+  phones.
 
 Hono server, React web app and PostgreSQL in one Docker image, with error
 reports and performance data for Sentry.

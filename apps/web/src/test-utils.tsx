@@ -2,19 +2,13 @@ import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import { vi } from "vitest";
-import { LocaleContext } from "@/i18n";
-import type { Locale } from "@/i18n/locales";
 
-/** Renders with a fresh query client and the given interface language. */
-export function renderWithProviders(ui: ReactNode, options: { locale?: Locale } = {}) {
+/** Renders with a fresh query client. */
+export function renderWithProviders(ui: ReactNode) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(
-    <QueryClientProvider client={client}>
-      <LocaleContext.Provider value={options.locale ?? "en"}>{ui}</LocaleContext.Provider>
-    </QueryClientProvider>,
-  );
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
 }
 
 type Reply = { status?: number; body?: unknown };

@@ -10,7 +10,6 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useHasRole, useMe } from "@/hooks/use-me";
 import { useT } from "@/i18n";
 import { common } from "@/i18n/common";
-import { useLocaleChoice, type LocaleChoice } from "@/i18n/provider";
 import { errorMessage } from "@/lib/api";
 import { useRoleLabel } from "@/lib/labels";
 import { useUpdateMe } from "./api";
@@ -54,45 +53,6 @@ function AccountCard({ me }: { me: Me }) {
           <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span>{t("accountHint")}</span>
         </p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function LanguageCard() {
-  const t = useT(messages);
-  const id = useId();
-  const { choice, setChoice } = useLocaleChoice();
-  const update = useUpdateMe();
-
-  const choose = (value: LocaleChoice) => {
-    setChoice(value);
-    // Emails follow the language chosen here.
-    if (value === "en" || value === "de") {
-      update.mutate({ locale: value }, { onError: (error) => toast.error(errorMessage(error)) });
-    }
-  };
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          <h2 id={`${id}-title`}>{t("language")}</h2>
-        </CardTitle>
-        <CardDescription id={`${id}-hint`}>{t("languageHint")}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <RadioGroup
-          value={choice}
-          onValueChange={(value) => choose(value as LocaleChoice)}
-          aria-labelledby={`${id}-title`}
-          aria-describedby={`${id}-hint`}
-          className="grid gap-3 sm:grid-cols-3"
-        >
-          <Choice id={`${id}-browser`} value="browser" title={t("browser")} />
-          <Choice id={`${id}-en`} value="en" title="English" />
-          <Choice id={`${id}-de`} value="de" title="Deutsch" />
-        </RadioGroup>
       </CardContent>
     </Card>
   );
@@ -179,7 +139,6 @@ export function SettingsPage() {
     <Page className="max-w-3xl">
       <PageHeader title={t("title")} description={t("description")} />
       <AccountCard me={me} />
-      <LanguageCard />
       {staff ? <NotificationsCard me={me} /> : <RequesterNote />}
     </Page>
   );

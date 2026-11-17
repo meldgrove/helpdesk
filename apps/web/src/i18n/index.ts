@@ -1,23 +1,30 @@
 import { createContext, useCallback, useContext } from "react";
-import type { Locale } from "./locales";
+import type { FormLanguage } from "@helpdesk/shared/form";
 
 /**
- * Translations. Each module keeps its own catalog next to its code:
+ * Texts. The app is in English (US). Each module keeps its own catalog next
+ * to its code:
  *
  *   export const messages = defineMessages({
  *     en: { title: "Contacts", count: "{count} contacts" },
- *     de: { title: "Kontakte", count: "{count} Kontakte" },
  *   });
  *   const t = useT(messages);  t("count", { count: 3 })
  *
- * German must have every English key (checked by TypeScript).
+ * Texts the request form shows also have German (`de`), because admins
+ * choose each form's language. The form runner provides that language
+ * (`LocaleContext`); everywhere else it is English. A German catalog must
+ * have every English key (checked by TypeScript).
  *
  * Singular: when `count` is 1, a key `<key>_one` wins if the catalog has one:
  *
  *     { members: "{count} members", members_one: "1 member" }
  */
+export type Locale = FormLanguage;
 export type Catalog = Record<string, string>;
-export type Messages<T extends Catalog> = { en: T; de: { [K in keyof T]: string } };
+export type Messages<T extends Catalog> = { en: T; de?: { [K in keyof T]: string } };
+
+/** The language tag for dates and numbers. */
+export const INTL_LOCALE: Record<Locale, string> = { en: "en-US", de: "de-DE" };
 
 export function defineMessages<T extends Catalog>(messages: Messages<T>): Messages<T> {
   return messages;
@@ -37,8 +44,8 @@ export function interpolate(template: string, params?: Record<string, string | n
 }
 
 export function translate<T extends Catalog>(messages: Messages<T>, locale: Locale) {
-  const catalog = messages[locale] as Catalog;
   const english = messages.en as Catalog;
+  const catalog = (messages[locale] as Catalog | undefined) ?? english;
   return (key: keyof T & string, params?: Record<string, string | number>) => {
     const one = params !== undefined && Number(params.count) === 1 ? `${key}_one` : null;
     const template =
@@ -47,7 +54,7 @@ export function translate<T extends Catalog>(messages: Messages<T>, locale: Loca
   };
 }
 
-/** The translate function for a module's catalog in the current locale. */
+/** The translate function for a module's catalog in the current language. */
 export function useT<T extends Catalog>(messages: Messages<T>) {
   const locale = useLocale();
   // eslint-disable-next-line react-hooks/exhaustive-deps

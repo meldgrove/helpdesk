@@ -17,7 +17,7 @@ export async function resetDatabase() {
 
 export async function createUser(
   role: Role | null,
-  options: { email?: string; name?: string; locale?: string; notifyVia?: "email" | "slack" } = {},
+  options: { email?: string; name?: string; notifyVia?: "email" | "slack" } = {},
 ) {
   const email = options.email ?? `${role ?? "nobody"}-${Math.random().toString(36).slice(2, 8)}@example.org`;
   const [user] = await getDb()
@@ -27,7 +27,6 @@ export async function createUser(
       name: options.name ?? role ?? "",
       role,
       roleSource: role ? "directory" : null,
-      locale: options.locale ?? "en",
       notifyVia: options.notifyVia ?? "email",
     })
     .returning();

@@ -12,15 +12,4 @@ export const messages = defineMessages({
     colWhat: "What",
     system: "System",
   },
-  de: {
-    title: "Protokoll",
-    description:
-      "Wer Anfrageformular, Kategorien, E-Mail und Slack geändert hat, und jeder Verzeichnis-Abgleich. Einträge enthalten nie Geheimnisse.",
-    empty: "Noch keine Einträge",
-    emptyHint: "Änderungen erscheinen hier, sobald sie passieren.",
-    colWhen: "Wann",
-    colWho: "Wer",
-    colWhat: "Was",
-    system: "System",
-  },
 });
