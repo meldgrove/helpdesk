@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { eq, sql } from "drizzle-orm";
 import { meUpdateSchema, type AuthConfig, type Me } from "@helpdesk/shared/api/users";
-import { pickLocaleFromHeader } from "../core/locale";
 import { config } from "../config";
 import { getDb } from "../db/client";
 import { users } from "../db/schema";
@@ -26,21 +25,12 @@ async function me(principal: UserPrincipal): Promise<Me> {
     role: principal.role,
     image: principal.image,
     notifyVia: principal.notifyVia,
-    locale: principal.locale,
     slackAvailable: Boolean(slack.botTokenEncrypted),
   };
 }
 
 router.get("/me", async (c) => {
   const principal = requireUser(c);
-  // Emails need a language before the person ever picks one: take the browser's.
-  if (!principal.locale) {
-    const locale = pickLocaleFromHeader(c.req.header("accept-language"));
-    if (locale) {
-      await getDb().update(users).set({ locale }).where(eq(users.id, principal.id));
-      principal.locale = locale;
-    }
-  }
   return c.json(await me(principal));
 });
 

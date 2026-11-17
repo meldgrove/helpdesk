@@ -20,4 +20,9 @@ describe("translate", () => {
   it("falls back to the plural text without a singular form", () => {
     expect(translate(messages, "en")("rows", { count: 1 })).toBe("1 rows");
   });
+
+  it("uses English for a catalog without German", () => {
+    const english = defineMessages({ en: { save: "Save" } });
+    expect(translate(english, "de")("save")).toBe("Save");
+  });
 });

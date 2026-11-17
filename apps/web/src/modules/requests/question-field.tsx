@@ -16,18 +16,16 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useUrgencyLabel } from "@/lib/labels";
-import { common } from "@/i18n/common";
 import { useT } from "@/i18n";
-import { messages } from "./messages";
+import { formMessages } from "./messages";
 
 export type Choice = { id: string; label: string };
 
-/** The choices of a question: its own, the urgencies, or the categories. */
+/** The choices of a question: its own, the urgencies (in the form's language), or the categories. */
 export function useChoices(categories: Choice[]) {
-  const urgency = useUrgencyLabel();
+  const t = useT(formMessages);
   return (question: Question): Choice[] => {
-    if (question.system === "urgency") return URGENCIES.map((id) => ({ id, label: urgency(id) }));
+    if (question.system === "urgency") return URGENCIES.map((id) => ({ id, label: t(id) }));
     if (question.system === "category") return categories;
     return question.options;
   };
@@ -44,8 +42,7 @@ export function QuestionField(props: {
   onBusyChange: (busy: boolean) => void;
   error?: string;
 }) {
-  const t = useT(messages);
-  const c = useT(common);
+  const t = useT(formMessages);
   const { question, value, error } = props;
   const id = `q-${question.id}`;
   const invalid = Boolean(error);
@@ -56,7 +53,7 @@ export function QuestionField(props: {
     <>
       {question.label}
       {question.required ? null : (
-        <span className="text-muted-foreground font-normal"> ({c("optional")})</span>
+        <span className="text-muted-foreground font-normal"> ({t("optional")})</span>
       )}
     </>
   );

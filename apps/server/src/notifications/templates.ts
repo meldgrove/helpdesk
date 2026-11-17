@@ -1,10 +1,8 @@
-import type { Locale } from "@helpdesk/shared/roles";
-import type { Status, Urgency } from "@helpdesk/shared/tickets";
+import type { Urgency } from "@helpdesk/shared/tickets";
 import { REOPEN_DAYS } from "@helpdesk/shared/tickets";
 
 /*
- * The texts of emails and Slack messages, in English and German. Emails go
- * out in the recipient's language; Slack channel posts in DEFAULT_LOCALE.
+ * The texts of emails and Slack messages, in English like the app.
  * People write in the app, never by email: inbound email is not read.
  */
 
@@ -17,28 +15,11 @@ export type TicketFacts = {
   url: string;
 };
 
-const URGENCY: Record<Locale, Record<Urgency, string>> = {
-  en: { low: "Low", normal: "Normal", urgent: "Urgent", very_urgent: "Very urgent" },
-  de: { low: "Niedrig", normal: "Normal", urgent: "Dringend", very_urgent: "Sehr dringend" },
-};
-
-export const STATUS_LABELS: Record<Locale, Record<Status, string>> = {
-  en: {
-    new: "New",
-    in_progress: "In progress",
-    waiting_for_requester: "Waiting for requester",
-    waiting_for_others: "Waiting for others",
-    done: "Done",
-    cancelled: "Cancelled",
-  },
-  de: {
-    new: "Neu",
-    in_progress: "In Arbeit",
-    waiting_for_requester: "Wartet auf anfragende Person",
-    waiting_for_others: "Wartet auf andere",
-    done: "Erledigt",
-    cancelled: "Abgebrochen",
-  },
+const URGENCY: Record<Urgency, string> = {
+  low: "Low",
+  normal: "Normal",
+  urgent: "Urgent",
+  very_urgent: "Very urgent",
 };
 
 export type Rendered = { subject: string; text: string; html: string };
@@ -90,54 +71,28 @@ function email(parts: {
 const tag = (ticket: TicketFacts) => `[#${ticket.number}]`;
 const excerpt = (body: string, max = 600) => (body.length > max ? `${body.slice(0, max).trimEnd()}…` : body);
 
-function footer(locale: Locale, appName: string) {
-  return locale === "de"
-    ? `${appName}. Bitte antworte in ${appName}, nicht auf diese E-Mail.`
-    : `${appName}. Please reply in ${appName}, not to this email.`;
-}
+const footer = (appName: string) => `${appName}. Please reply in ${appName}, not to this email.`;
 
 /** To the requester: their request arrived. */
-export function ticketReceived(locale: Locale, appName: string, name: string, ticket: TicketFacts): Rendered {
-  if (locale === "de") {
-    return email({
-      subject: `${tag(ticket)} Deine Anfrage ist eingegangen: ${ticket.title}`,
-      greeting: `Hallo ${name},`,
-      lines: [`deine Anfrage #${ticket.number} „${ticket.title}“ ist eingegangen. Wir melden uns bei dir.`],
-      linkText: "Anfrage ansehen",
-      url: ticket.url,
-      footer: footer(locale, appName),
-    });
-  }
+export function ticketReceived(appName: string, name: string, ticket: TicketFacts): Rendered {
   return email({
     subject: `${tag(ticket)} We received your request: ${ticket.title}`,
     greeting: `Hello ${name},`,
     lines: [`we received your request #${ticket.number} "${ticket.title}". We will get back to you.`],
     linkText: "View your request",
     url: ticket.url,
-    footer: footer(locale, appName),
+    footer: footer(appName),
   });
 }
 
 /** To the requester: staff replied. */
 export function staffReplied(
-  locale: Locale,
   appName: string,
   name: string,
   ticket: TicketFacts,
   author: string,
   body: string,
 ): Rendered {
-  if (locale === "de") {
-    return email({
-      subject: `${tag(ticket)} Neue Antwort: ${ticket.title}`,
-      greeting: `Hallo ${name},`,
-      lines: [`${author} hat auf deine Anfrage #${ticket.number} geantwortet:`],
-      quote: body,
-      linkText: "Antworten oder Anfrage ansehen",
-      url: ticket.url,
-      footer: footer(locale, appName),
-    });
-  }
   return email({
     subject: `${tag(ticket)} New reply: ${ticket.title}`,
     greeting: `Hello ${name},`,
@@ -145,25 +100,12 @@ export function staffReplied(
     quote: body,
     linkText: "Reply or view the request",
     url: ticket.url,
-    footer: footer(locale, appName),
+    footer: footer(appName),
   });
 }
 
 /** To the requester: the ticket is done. */
-export function ticketDone(locale: Locale, appName: string, name: string, ticket: TicketFacts): Rendered {
-  if (locale === "de") {
-    return email({
-      subject: `${tag(ticket)} Deine Anfrage ist erledigt: ${ticket.title}`,
-      greeting: `Hallo ${name},`,
-      lines: [
-        `deine Anfrage #${ticket.number} „${ticket.title}“ ist erledigt.`,
-        `Fehlt noch etwas? Antworte innerhalb von ${REOPEN_DAYS} Tagen in ${appName}, dann wird sie wieder geöffnet.`,
-      ],
-      linkText: "Anfrage ansehen",
-      url: ticket.url,
-      footer: footer(locale, appName),
-    });
-  }
+export function ticketDone(appName: string, name: string, ticket: TicketFacts): Rendered {
   return email({
     subject: `${tag(ticket)} Your request is done: ${ticket.title}`,
     greeting: `Hello ${name},`,
@@ -173,36 +115,18 @@ export function ticketDone(locale: Locale, appName: string, name: string, ticket
     ],
     linkText: "View your request",
     url: ticket.url,
-    footer: footer(locale, appName),
+    footer: footer(appName),
   });
 }
 
 /** To an assignee: a ticket was assigned to them. */
 export function ticketAssigned(
-  locale: Locale,
   appName: string,
   name: string,
   ticket: TicketFacts,
   actor: string | null,
 ): { email: Rendered; slack: string } {
-  const urgency = URGENCY[locale][ticket.urgency];
-  if (locale === "de") {
-    const lead = actor
-      ? `${actor} hat dir Anfrage #${ticket.number} „${ticket.title}“ zugewiesen.`
-      : `Anfrage #${ticket.number} „${ticket.title}“ ist dir zugewiesen.`;
-    const details = `Von ${ticket.requesterName} · ${ticket.category ?? "Ohne Kategorie"} · Dringlichkeit: ${urgency}`;
-    return {
-      email: email({
-        subject: `${tag(ticket)} Dir zugewiesen: ${ticket.title}`,
-        greeting: `Hallo ${name},`,
-        lines: [lead, details],
-        linkText: "Ticket öffnen",
-        url: ticket.url,
-        footer: `${appName}`,
-      }),
-      slack: `${slackText(lead)}\n${slackText(details)}\n<${ticket.url}|Ticket öffnen>`,
-    };
-  }
+  const urgency = URGENCY[ticket.urgency];
   const lead = actor
     ? `${actor} assigned request #${ticket.number} "${ticket.title}" to you.`
     : `Request #${ticket.number} "${ticket.title}" is assigned to you.`;
@@ -222,7 +146,6 @@ export function ticketAssigned(
 
 /** To an assignee: the requester replied (and maybe reopened the ticket). */
 export function requesterReplied(
-  locale: Locale,
   appName: string,
   name: string,
   ticket: TicketFacts,
@@ -230,23 +153,6 @@ export function requesterReplied(
   reopened: boolean,
 ): { email: Rendered; slack: string } {
   const short = excerpt(body);
-  if (locale === "de") {
-    const lead = reopened
-      ? `${ticket.requesterName} hat auf Anfrage #${ticket.number} „${ticket.title}“ geantwortet und sie wieder geöffnet:`
-      : `${ticket.requesterName} hat auf Anfrage #${ticket.number} „${ticket.title}“ geantwortet:`;
-    return {
-      email: email({
-        subject: `${tag(ticket)} ${ticket.requesterName} hat geantwortet: ${ticket.title}`,
-        greeting: `Hallo ${name},`,
-        lines: [lead],
-        quote: short,
-        linkText: "Ticket öffnen",
-        url: ticket.url,
-        footer: `${appName}`,
-      }),
-      slack: `${slackText(lead)}\n${slackQuote(short)}\n<${ticket.url}|Ticket öffnen>`,
-    };
-  }
   const lead = reopened
     ? `${ticket.requesterName} replied to request #${ticket.number} "${ticket.title}" and reopened it:`
     : `${ticket.requesterName} replied to request #${ticket.number} "${ticket.title}":`;
@@ -265,17 +171,8 @@ export function requesterReplied(
 }
 
 /** To the Slack channel: a new ticket. */
-export function newTicketPost(locale: Locale, ticket: TicketFacts): string {
-  const urgency = URGENCY[locale][ticket.urgency];
-  if (locale === "de") {
-    return [
-      `:inbox_tray: *Neue Anfrage #${ticket.number}:* ${slackText(ticket.title)}`,
-      slackText(
-        `${ticket.category ?? "Ohne Kategorie"} · Dringlichkeit: ${urgency} · Von ${ticket.requesterName}`,
-      ),
-      `<${ticket.url}|Ticket öffnen>`,
-    ].join("\n");
-  }
+export function newTicketPost(ticket: TicketFacts): string {
+  const urgency = URGENCY[ticket.urgency];
   return [
     `:inbox_tray: *New request #${ticket.number}:* ${slackText(ticket.title)}`,
     slackText(`${ticket.category ?? "No category"} · Urgency: ${urgency} · From ${ticket.requesterName}`),
@@ -284,11 +181,7 @@ export function newTicketPost(locale: Locale, ticket: TicketFacts): string {
 }
 
 /** To the Slack channel: the requester replied to a ticket nobody is assigned to. */
-export function unassignedReplyPost(locale: Locale, ticket: TicketFacts, reopened: boolean): string {
-  if (locale === "de") {
-    const verb = reopened ? "hat geantwortet und wieder geöffnet" : "hat geantwortet";
-    return `:speech_balloon: ${slackText(`${ticket.requesterName} ${verb}: #${ticket.number} ${ticket.title} (niemandem zugewiesen)`)}\n<${ticket.url}|Ticket öffnen>`;
-  }
+export function unassignedReplyPost(ticket: TicketFacts, reopened: boolean): string {
   const verb = reopened ? "replied and reopened" : "replied";
   return `:speech_balloon: ${slackText(`${ticket.requesterName} ${verb}: #${ticket.number} ${ticket.title} (not assigned)`)}\n<${ticket.url}|Open the ticket>`;
 }
@@ -306,15 +199,11 @@ function slackQuote(value: string): string {
 }
 
 /** A test email from the integrations page. */
-export function testEmail(locale: Locale, appName: string, url: string): Rendered {
+export function testEmail(appName: string, url: string): Rendered {
   return email({
-    subject: locale === "de" ? `Test-E-Mail von ${appName}` : `Test email from ${appName}`,
-    greeting: locale === "de" ? "Hallo," : "Hello,",
-    lines: [
-      locale === "de"
-        ? `diese E-Mail zeigt, dass ${appName} E-Mails senden kann.`
-        : `this email shows that ${appName} can send email.`,
-    ],
+    subject: `Test email from ${appName}`,
+    greeting: "Hello,",
+    lines: [`this email shows that ${appName} can send email.`],
     linkText: appName,
     url,
     footer: appName,

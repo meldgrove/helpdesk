@@ -28,10 +28,10 @@ PostgreSQL holds everything except uploaded files, which live in
 
 - `users` (+ Better Auth's `sessions`, `accounts`, `verifications`):
   everyone the sign-in or the directory sync knows, with their `role`
-  (null: no access), where it came from, language, and how they want to be
-  notified.
-- `form_versions`: every published version of the form (JSON). The highest
-  version is the form; tickets point to the version they were sent with.
+  (null: no access), where it came from, and how they want to be notified.
+- `form_versions`: every published version of the form (JSON, with its
+  language). The highest version is the form; tickets point to the version
+  they were sent with.
 - `categories`: the category question's answers, with a default assignee.
 - `tickets`: number (identity), title, status, urgency, category,
   requester, assignee, due date, board rank, revision, and the answers as

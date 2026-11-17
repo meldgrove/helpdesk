@@ -33,7 +33,3 @@ export function highestRole(roles: Iterable<Role>): Role | null {
 export const NOTIFY_CHANNELS = ["email", "slack"] as const;
 export const notifyChannelSchema = z.enum(NOTIFY_CHANNELS);
 export type NotifyChannel = z.infer<typeof notifyChannelSchema>;
-
-export const LOCALES = ["en", "de"] as const;
-export const localeSchema = z.enum(LOCALES);
-export type Locale = z.infer<typeof localeSchema>;

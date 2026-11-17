@@ -1,6 +1,5 @@
 import { useMemo } from "react";
-import { useLocale } from "@/i18n";
-import type { Locale } from "@/i18n/locales";
+import { INTL_LOCALE, useLocale, type Locale } from "@/i18n";
 
 const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["year", 365 * 24 * 3600],
@@ -12,12 +11,13 @@ const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["second", 1],
 ];
 
-/** Dates, times and numbers in the interface language. */
+/** Dates, times and numbers: US English in the app, German in a German request form. */
 export function createFormatter(locale: Locale, now: () => number = Date.now) {
-  const dateTime = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" });
-  const dateOnly = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" });
-  const number = new Intl.NumberFormat(locale);
-  const relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  const tag = INTL_LOCALE[locale];
+  const dateTime = new Intl.DateTimeFormat(tag, { dateStyle: "medium", timeStyle: "short" });
+  const dateOnly = new Intl.DateTimeFormat(tag, { dateStyle: "medium", timeZone: "UTC" });
+  const number = new Intl.NumberFormat(tag);
+  const relative = new Intl.RelativeTimeFormat(tag, { numeric: "auto" });
   return {
     dateTime: (iso: string) => dateTime.format(new Date(iso)),
     number: (value: number) => number.format(value),
@@ -29,7 +29,7 @@ export function createFormatter(locale: Locale, now: () => number = Date.now) {
         ? `${number.format(value)} B`
         : value < 1024 * 1024
           ? `${number.format(Math.round(value / 1024))} KB`
-          : `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value / 1024 / 1024)} MB`,
+          : `${new Intl.NumberFormat(tag, { maximumFractionDigits: 1 }).format(value / 1024 / 1024)} MB`,
     /** "3 minutes ago", "yesterday". */
     relative: (iso: string) => {
       const seconds = Math.round((new Date(iso).getTime() - now()) / 1000);

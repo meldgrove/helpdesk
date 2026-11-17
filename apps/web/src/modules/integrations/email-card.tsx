@@ -34,10 +34,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { useMe } from "@/hooks/use-me";
-import { useLocale, useT } from "@/i18n";
+import { useT } from "@/i18n";
 import { common } from "@/i18n/common";
 import { ApiError, errorMessage } from "@/lib/api";
-import { applyServerErrors, firstMessage, translateMessage, useSchemaResolver } from "@/lib/validation";
+import { applyServerErrors, firstMessage, useSchemaResolver } from "@/lib/validation";
 import { useEmailSettings, useSaveEmail, useTestEmail } from "./api";
 import { messages } from "./messages";
 
@@ -150,7 +150,6 @@ function TextField(props: {
 
 function TestEmail(props: { defaultTo: string; dirty: boolean }) {
   const t = useT(messages);
-  const locale = useLocale();
   const id = useId();
   const test = useTestEmail();
   const [to, setTo] = useState(props.defaultTo);
@@ -164,7 +163,7 @@ function TestEmail(props: { defaultTo: string; dirty: boolean }) {
       setResult(await test.mutateAsync(to.trim()));
     } catch (failure) {
       const field = failure instanceof ApiError ? failure.fields?.to : undefined;
-      if (field) setError(translateMessage(field, locale));
+      if (field) setError(field);
       else toast.error(errorMessage(failure));
     }
   };
@@ -212,7 +211,6 @@ function TestEmail(props: { defaultTo: string; dirty: boolean }) {
 export function EmailForm(props: { settings: EmailSettings; defaultTo: string }) {
   const t = useT(messages);
   const tc = useT(common);
-  const locale = useLocale();
   const id = useId();
   const save = useSaveEmail();
   const resolver = useSchemaResolver<EmailValues, EmailOutput>(emailFormSchema);
@@ -239,7 +237,7 @@ export function EmailForm(props: { settings: EmailSettings; defaultTo: string })
       form.reset(emailValues(saved));
       toast.success(t("emailSaved"));
     } catch (error) {
-      applyServerErrors(form, error, locale);
+      applyServerErrors(form, error);
       toast.error(errorMessage(error));
     }
   });

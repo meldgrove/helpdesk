@@ -21,7 +21,7 @@ import { categories, formVersions, ticketEvents, ticketMessages, tickets, users 
 import type { UserPrincipal } from "../auth/principal";
 import { conflict, notFound, validationError } from "../http/errors";
 import { linkUploads, lockUploads } from "../attachments/storage";
-import { displayName, localeOf, Outbox, type Recipient } from "../notifications/enqueue";
+import { displayName, Outbox, type Recipient } from "../notifications/enqueue";
 import {
   newTicketPost,
   requesterReplied,
@@ -66,7 +66,6 @@ const recipient = (row: UserRow): Recipient => ({
   id: row.id,
   email: row.email,
   name: displayName(row),
-  locale: row.locale,
   notifyVia: row.notifyVia,
 });
 
@@ -141,17 +140,17 @@ async function announceNewTicket(
   outbox.email(
     "ticket_received",
     recipient(requester),
-    ticketReceived(localeOf(requester), appName, displayName(requester), {
+    ticketReceived(appName, displayName(requester), {
       ...ticketFacts,
       url: requesterUrl(ticket.number),
     }),
   );
-  outbox.channel("ticket_created", newTicketPost(config().DEFAULT_LOCALE, ticketFacts));
+  outbox.channel("ticket_created", newTicketPost(ticketFacts));
   if (assignee && assignee.id !== actor.id) {
     outbox.personal(
       "ticket_assigned",
       recipient(assignee),
-      ticketAssigned(localeOf(assignee), appName, displayName(assignee), ticketFacts, assignedBy),
+      ticketAssigned(appName, displayName(assignee), ticketFacts, assignedBy),
     );
   }
   await outbox.flush(tx);
@@ -242,9 +241,6 @@ export async function createFromForm(
   );
 }
 
-const DESCRIPTION_LABEL = { en: "Description", de: "Beschreibung" } as const;
-const FILES_LABEL = { en: "Attachments", de: "Anhänge" } as const;
-
 /** Staff record a request for someone, e.g. after a phone call. */
 export async function createByStaff(
   actor: UserPrincipal,
@@ -276,12 +272,11 @@ export async function createByStaff(
         })
         .returning();
       await linkUploads(tx, files, { ticketId: ticket!.id });
-      const locale = config().DEFAULT_LOCALE;
       const answers: StoredAnswer[] = [];
       if (input.description) {
         answers.push({
           questionId: "description",
-          label: DESCRIPTION_LABEL[locale],
+          label: "Description",
           type: "long_text",
           display: [input.description],
           attachmentIds: [],
@@ -290,7 +285,7 @@ export async function createByStaff(
       if (files.length > 0) {
         answers.push({
           questionId: "files",
-          label: FILES_LABEL[locale],
+          label: "Attachments",
           type: "file",
           display: files.map((file) => file.filename),
           attachmentIds: files.map((file) => file.id),
@@ -334,7 +329,7 @@ async function changeStatus(tx: DbOrTx, ticket: TicketRow, to: Status, change: C
       change.outbox.email(
         "ticket_done",
         recipient(requester),
-        ticketDone(localeOf(requester), config().APP_NAME, displayName(requester), {
+        ticketDone(config().APP_NAME, displayName(requester), {
           ...(await facts(tx, ticket, requester)),
           url: requesterUrl(ticket.number),
         }),
@@ -364,7 +359,6 @@ async function changeAssignee(
       "ticket_assigned",
       recipient(next),
       ticketAssigned(
-        localeOf(next),
         config().APP_NAME,
         displayName(next),
         { ...(await facts(tx, ticket, requester)), title: change.values.title ?? ticket.title },
@@ -482,7 +476,6 @@ export async function addStaffMessage(actor: UserPrincipal, number: number, inpu
           "staff_reply",
           recipient(requester),
           staffReplied(
-            localeOf(requester),
             config().APP_NAME,
             displayName(requester),
             { ...(await facts(tx, ticket, requester)), url: requesterUrl(ticket.number) },
@@ -535,20 +528,10 @@ export async function addRequesterMessage(actor: UserPrincipal, number: number, 
       change.outbox.personal(
         "requester_reply",
         recipient(assignee),
-        requesterReplied(
-          localeOf(assignee),
-          config().APP_NAME,
-          displayName(assignee),
-          ticketFacts,
-          body || "📎",
-          reopened,
-        ),
+        requesterReplied(config().APP_NAME, displayName(assignee), ticketFacts, body || "📎", reopened),
       );
     } else if (!assignee) {
-      change.outbox.channel(
-        "requester_reply",
-        unassignedReplyPost(config().DEFAULT_LOCALE, ticketFacts, reopened),
-      );
+      change.outbox.channel("requester_reply", unassignedReplyPost(ticketFacts, reopened));
     }
     if (change.events.length > 0) {
       await saveChange(tx, ticket, actor, change);

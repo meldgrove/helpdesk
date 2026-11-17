@@ -119,4 +119,40 @@ describe("FormRunner", () => {
     const body = JSON.parse(String(fetch.mock.calls[0]![1]!.body));
     expect(Object.keys(body.answers).sort()).toEqual(["category", "description", "title", "urgency"]);
   });
+
+  it("speaks the form's language: German buttons, problems and urgencies", async () => {
+    const user = userEvent.setup();
+    stubFetch({
+      status: 422,
+      body: {
+        error: {
+          code: "validation_failed",
+          message: "Check the highlighted fields",
+          fields: { "answers.description": "This answer is too long" },
+        },
+      },
+    });
+    const german: Form = { ...form, definition: { ...form.definition, language: "de" } };
+    const { container } = renderWithProviders(<FormRunner form={german} onSent={() => undefined} />);
+
+    expect(container.querySelector('[lang="de"]')).not.toBeNull();
+    expect(screen.getByText("Schritt 1 von 3")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Weiter/ }));
+    expect(screen.getAllByText("Beantworte diese Frage")).toHaveLength(3);
+
+    await user.type(screen.getByLabelText("What is your request about?"), "Gehaltsabrechnung");
+    await user.click(screen.getByLabelText("HR"));
+    await user.click(screen.getByLabelText("Dringend"));
+    await user.click(screen.getByRole("button", { name: /Weiter/ }));
+    expect(screen.getByLabelText("Attachments (optional)")).toHaveTextContent("Dateien hinzufügen");
+    await user.type(screen.getByLabelText("Describe your request"), "Vom letzten Monat.");
+    await user.click(screen.getByRole("button", { name: /Weiter/ }));
+
+    expect(screen.getByRole("heading", { name: "Prüfen und senden" })).toBeInTheDocument();
+    expect(screen.getByText("Dringend")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Anfrage senden/ }));
+    // The server's problem, in the form's language, on the page of the question.
+    expect(await screen.findByText("Diese Antwort ist zu lang")).toBeInTheDocument();
+    expect(screen.getByText("Prüfe die markierten Antworten")).toBeInTheDocument();
+  });
 });

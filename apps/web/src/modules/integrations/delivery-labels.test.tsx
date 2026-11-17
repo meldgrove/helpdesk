@@ -38,13 +38,13 @@ describe("delivery labels", () => {
     ]);
   });
 
-  it("translates them and shows unknown kinds as they are", () => {
-    renderWithProviders(<Labels kinds={["ticket_assigned", "something_new"]} />, { locale: "de" });
+  it("shows unknown kinds as they are", () => {
+    renderWithProviders(<Labels kinds={["ticket_assigned", "something_new"]} />);
     expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
-      "Ticket zugewiesen",
+      "Ticket assigned",
       "something_new",
-      "Slack-Direktnachricht",
-      "Übersprungen",
+      "Slack direct message",
+      "Skipped",
     ]);
   });
 });

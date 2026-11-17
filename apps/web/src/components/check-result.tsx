@@ -6,7 +6,6 @@ import { defineMessages, useT } from "@/i18n";
 
 const messages = defineMessages({
   en: { ok: "Connection works", failed: "Connection failed", latency: "Answered in {ms} ms" },
-  de: { ok: "Verbindung funktioniert", failed: "Verbindung fehlgeschlagen", latency: "Antwort in {ms} ms" },
 });
 
 /** The result of a connection check (email, Slack, directory). */

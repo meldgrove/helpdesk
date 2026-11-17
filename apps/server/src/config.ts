@@ -42,8 +42,6 @@ const schema = z
     /** The public URL of the app, e.g. https://helpdesk.example.org */
     APP_URL: withDefault(z.url(), "http://localhost:3000"),
     APP_NAME: withDefault(z.string().min(1).max(100), "Helpdesk"),
-    /** Language of Slack channel posts and of emails to people who never chose one. */
-    DEFAULT_LOCALE: withDefault(z.enum(["en", "de"]), "en"),
     DATABASE_URL: z.string().min(1),
     DATABASE_POOL_SIZE: withDefault(z.coerce.number().int().min(1).max(200), 10),
     /** Signs sessions. At least 32 characters. */

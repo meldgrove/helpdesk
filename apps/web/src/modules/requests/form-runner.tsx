@@ -18,8 +18,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { FieldGroup } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { ApiError, api, errorMessage } from "@/lib/api";
-import { useT } from "@/i18n";
-import { issueMessages, messages } from "./messages";
+import { LocaleContext, useT } from "@/i18n";
+import { formMessages, issueMessages } from "./messages";
 import { QuestionField, useChoices, type Choice } from "./question-field";
 
 /** The page that holds a question, among the shown pages; -1 when none does. */
@@ -45,12 +45,29 @@ export function displayAnswer(
   return ids;
 }
 
+/** The answer problem a message of the server names, by its English text. */
+const ISSUE_BY_TEXT = new Map(
+  Object.entries(issueMessages.en).map(([code, text]) => [text, code as AnswerIssue]),
+);
+
 /**
  * The request form, one page at a time. Pages and questions appear by their
  * show-if rules (shared with the server); the last step reviews the answers.
+ * Its own texts follow the form's language, not the app's.
  */
-export function FormRunner({ form, onSent }: { form: Form; onSent: (number: number) => void }) {
-  const t = useT(messages);
+export function FormRunner(props: { form: Form; onSent: (number: number) => void }) {
+  const language = props.form.definition.language;
+  return (
+    <LocaleContext.Provider value={language}>
+      <div lang={language}>
+        <Runner {...props} />
+      </div>
+    </LocaleContext.Provider>
+  );
+}
+
+function Runner({ form, onSent }: { form: Form; onSent: (number: number) => void }) {
+  const t = useT(formMessages);
   const issue = useT(issueMessages);
   const categoryChoices = useMemo(
     () => form.categories.map((category) => ({ id: category.id, label: category.name })),
@@ -148,7 +165,10 @@ export function FormRunner({ form, onSent }: { form: Form; onSent: (number: numb
         const fieldErrors = Object.fromEntries(
           Object.entries(error.fields)
             .filter(([key]) => key.startsWith("answers."))
-            .map(([key, message]) => [key.slice("answers.".length), message]),
+            .map(([key, message]) => {
+              const code = ISSUE_BY_TEXT.get(message);
+              return [key.slice("answers.".length), code ? issue(code) : message];
+            }),
         );
         setErrors(fieldErrors);
         const first = Object.keys(fieldErrors)

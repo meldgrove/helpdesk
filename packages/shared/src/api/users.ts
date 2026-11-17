@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { idSchema, pageQuerySchema } from "./common";
-import { localeSchema, notifyChannelSchema, roleSchema } from "../roles";
+import { notifyChannelSchema, roleSchema } from "../roles";
 
 export const meSchema = z.object({
   id: idSchema,
@@ -10,7 +10,6 @@ export const meSchema = z.object({
   image: z.string().nullable(),
   /** How assigned tickets and requester replies reach this person (staff only). */
   notifyVia: notifyChannelSchema,
-  locale: localeSchema.nullable(),
   /** Slack is set up, so `notifyVia: "slack"` can work. */
   slackAvailable: z.boolean(),
 });
@@ -18,7 +17,6 @@ export type Me = z.infer<typeof meSchema>;
 
 export const meUpdateSchema = z.object({
   notifyVia: notifyChannelSchema.optional(),
-  locale: localeSchema.optional(),
 });
 export type MeUpdate = z.infer<typeof meUpdateSchema>;
 

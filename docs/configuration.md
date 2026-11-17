@@ -38,18 +38,17 @@ See [Identity and access](identity-and-access.md).
 
 ## The app
 
-| Variable                | Default                              | Description                                                                                                              |
-| ----------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `APP_NAME`              | `Helpdesk`                           | Shown in the app, emails and Slack messages.                                                                             |
-| `DEFAULT_LOCALE`        | `en`                                 | `en` or `de`: the starting form and category, Slack channel posts, and emails to people whose language is not known yet. |
-| `ATTACHMENTS_DIR`       | `.data/attachments`                  | Where uploaded files are stored; `/data/attachments` in the image. Keep it on a backed-up volume.                        |
-| `APP_ROLE`              | `all`                                | `all`, `web`, `worker` or `migrate`; the image's command sets it.                                                        |
-| `RUN_MIGRATIONS`        | `false`                              | Apply migrations at start (single-container setups).                                                                     |
-| `TRUST_PROXY`           | `false`                              | Reverse proxies in front that append to `X-Forwarded-For`: `true` (one), a number, or `false`.                           |
-| `PORT`, `HOST`          | `3000`, `0.0.0.0`                    | Where the web process listens.                                                                                           |
-| `DATABASE_POOL_SIZE`    | `10`                                 | Database connections per process.                                                                                        |
-| `LOG_LEVEL`             | `info`                               | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`.                                                          |
-| `WORKER_HEARTBEAT_FILE` | `/tmp/worker-heartbeat` in the image | The worker touches it for health checks.                                                                                 |
+| Variable                | Default                              | Description                                                                                       |
+| ----------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `APP_NAME`              | `Helpdesk`                           | Shown in the app, emails and Slack messages.                                                      |
+| `ATTACHMENTS_DIR`       | `.data/attachments`                  | Where uploaded files are stored; `/data/attachments` in the image. Keep it on a backed-up volume. |
+| `APP_ROLE`              | `all`                                | `all`, `web`, `worker` or `migrate`; the image's command sets it.                                 |
+| `RUN_MIGRATIONS`        | `false`                              | Apply migrations at start (single-container setups).                                              |
+| `TRUST_PROXY`           | `false`                              | Reverse proxies in front that append to `X-Forwarded-For`: `true` (one), a number, or `false`.    |
+| `PORT`, `HOST`          | `3000`, `0.0.0.0`                    | Where the web process listens.                                                                    |
+| `DATABASE_POOL_SIZE`    | `10`                                 | Database connections per process.                                                                 |
+| `LOG_LEVEL`             | `info`                               | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`.                                   |
+| `WORKER_HEARTBEAT_FILE` | `/tmp/worker-heartbeat` in the image | The worker touches it for health checks.                                                          |
 
 ## Sentry
 

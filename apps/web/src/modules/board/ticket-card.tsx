@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useLocale, useT } from "@/i18n";
+import { INTL_LOCALE, useLocale, useT } from "@/i18n";
 import { useStatusLabel } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 import { PersonAvatar, StatusDot } from "@/modules/tickets/bits";
@@ -20,12 +20,13 @@ import { isOverdue } from "@/modules/tickets/display";
 import { personName } from "@/modules/tickets/timeline";
 import { messages } from "./messages";
 
-/** "12 Nov": a short calendar date (YYYY-MM-DD) in the interface language. */
+/** "Nov 12": a short calendar date (YYYY-MM-DD) in the interface language. */
 function useShortDate() {
   const locale = useLocale();
   return useMemo(() => {
-    const short = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: "UTC" });
-    const long = new Intl.DateTimeFormat(locale, { dateStyle: "full", timeZone: "UTC" });
+    const tag = INTL_LOCALE[locale];
+    const short = new Intl.DateTimeFormat(tag, { day: "numeric", month: "short", timeZone: "UTC" });
+    const long = new Intl.DateTimeFormat(tag, { dateStyle: "full", timeZone: "UTC" });
     const parse = (value: string) => new Date(`${value.slice(0, 10)}T00:00:00Z`);
     return {
       short: (value: string) => short.format(parse(value)),

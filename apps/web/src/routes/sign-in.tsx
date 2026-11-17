@@ -21,14 +21,6 @@ const messages = defineMessages({
     noAccess: "This account has no access. Ask your IT team to add you to a helpdesk group.",
     failed: "Sign-in failed. Try again.",
   },
-  de: {
-    title: "Anmelden",
-    description: "Sende Anfragen und verfolge sie.",
-    signInWith: "Mit {name} anmelden",
-    signInSso: "Anmelden",
-    noAccess: "Dieses Konto hat keinen Zugang. Bitte dein IT-Team, dich einer Helpdesk-Gruppe hinzuzufügen.",
-    failed: "Die Anmeldung ist fehlgeschlagen. Versuche es erneut.",
-  },
 });
 
 const searchSchema = z.object({

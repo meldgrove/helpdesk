@@ -207,6 +207,38 @@ describe("sending the form", () => {
   });
 });
 
+describe("the form's language", () => {
+  it("starts in English; admins publish it in German, and emails stay English", async () => {
+    await setUpIntegrations(getDb());
+    expect((await request("GET", "/api/v1/form", { userId: requester.id })).body.definition.language).toBe(
+      "en",
+    );
+    const { language: _language, ...withoutLanguage } = DEFAULT_FORM;
+    const unset = await request("PUT", "/api/v1/form", {
+      userId: admin.id,
+      body: { baseVersion: 1, definition: withoutLanguage },
+    });
+    expect(unset.body.definition.language).toBe("en");
+    const french = await request("PUT", "/api/v1/form", {
+      userId: admin.id,
+      body: { baseVersion: 2, definition: { ...DEFAULT_FORM, language: "fr" } },
+    });
+    expect(french.status).toBe(422);
+    const german = await request("PUT", "/api/v1/form", {
+      userId: admin.id,
+      body: { baseVersion: 2, definition: { ...DEFAULT_FORM, language: "de" } },
+    });
+    expect(german.status).toBe(200);
+    expect((await request("GET", "/api/v1/form", { userId: requester.id })).body.definition.language).toBe(
+      "de",
+    );
+
+    expect((await submit()).status).toBe(201);
+    const [received] = await notificationsOf("ticket_received");
+    expect(received!.subject).toBe("[#1] We received your request: Printer on floor 2 is broken");
+  });
+});
+
 describe("working on tickets", () => {
   it("changes fields with a revision check and records the activity", async () => {
     await setUpIntegrations(getDb());

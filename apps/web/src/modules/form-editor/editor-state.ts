@@ -41,6 +41,7 @@ export const isTextType = (type: QuestionType) => TEXT_TYPES.includes(type);
 /** Fills the defaults the schema would add, so the editor can rely on them. */
 export function normalizeDefinition(definition: FormDefinition): FormDefinition {
   return {
+    language: definition.language ?? "en",
     title: definition.title ?? "",
     description: definition.description ?? "",
     pages: definition.pages.map((page) => ({
@@ -204,7 +205,7 @@ function swap<T>(items: readonly T[], index: number, target: number): T[] {
 
 export function updateForm(
   definition: FormDefinition,
-  patch: Partial<Pick<FormDefinition, "title" | "description">>,
+  patch: Partial<Pick<FormDefinition, "language" | "title" | "description">>,
 ): FormDefinition {
   return { ...definition, ...patch };
 }

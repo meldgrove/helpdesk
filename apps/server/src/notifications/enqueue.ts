@@ -1,6 +1,4 @@
 import { sql } from "drizzle-orm";
-import { localeSchema, type Locale } from "@helpdesk/shared/roles";
-import { config } from "../config";
 import type { DbOrTx } from "../db/client";
 import { notifications } from "../db/schema";
 import { getStoredEmail, getStoredSlack } from "../core/settings";
@@ -13,12 +11,8 @@ export type Recipient = {
   id: string;
   email: string;
   name: string;
-  locale: string | null;
   notifyVia: string;
 };
-
-export const localeOf = (person: { locale: string | null } | null | undefined): Locale =>
-  localeSchema.safeParse(person?.locale).data ?? config().DEFAULT_LOCALE;
 
 export const displayName = (person: { name: string; email: string }) => person.name.trim() || person.email;
 

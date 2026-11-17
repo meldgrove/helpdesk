@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
-import { useLocale, useT } from "@/i18n";
+import { useT } from "@/i18n";
 import { common } from "@/i18n/common";
 import { errorMessage } from "@/lib/api";
 import { applyServerErrors, firstMessage, useSchemaResolver } from "@/lib/validation";
@@ -280,7 +280,6 @@ function ChannelField(props: {
 export function SlackForm({ settings }: { settings: SlackSettings }) {
   const t = useT(messages);
   const tc = useT(common);
-  const locale = useLocale();
   const id = useId();
   const save = useSaveSlack();
   const test = useTestSlack();
@@ -301,7 +300,7 @@ export function SlackForm({ settings }: { settings: SlackSettings }) {
       setResult(null);
       toast.success(t("slackSaved"));
     } catch (error) {
-      applyServerErrors(form, error, locale);
+      applyServerErrors(form, error);
       toast.error(errorMessage(error));
     }
   });

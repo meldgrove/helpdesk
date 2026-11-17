@@ -1,5 +1,5 @@
 import { and, eq, gt } from "drizzle-orm";
-import { localeSchema, notifyChannelSchema, roleSchema } from "@helpdesk/shared/roles";
+import { notifyChannelSchema, roleSchema } from "@helpdesk/shared/roles";
 import type { Db } from "../db/client";
 import { sessions, users } from "../db/schema";
 import { auth } from "./auth";
@@ -18,7 +18,6 @@ export async function resolvePrincipal(db: Db, headers: Headers): Promise<UserPr
       role: users.role,
       image: users.image,
       notifyVia: users.notifyVia,
-      locale: users.locale,
     })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
@@ -34,6 +33,5 @@ export async function resolvePrincipal(db: Db, headers: Headers): Promise<UserPr
     role: role.data,
     image: row.image,
     notifyVia: notifyChannelSchema.safeParse(row.notifyVia).data ?? "email",
-    locale: localeSchema.safeParse(row.locale).data ?? null,
   };
 }

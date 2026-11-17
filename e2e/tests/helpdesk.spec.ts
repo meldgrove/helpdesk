@@ -214,3 +214,18 @@ test("staff pages stay closed to requesters", async () => {
   const response = await erin.request.get("/api/v1/tickets/1");
   expect(response.status()).toBe(403);
 });
+
+test("an admin makes the form German; the rest of the app stays English", async () => {
+  await ada.goto("/admin/form");
+  await ada.getByRole("combobox", { name: "Language" }).click();
+  await ada.getByRole("option", { name: "German" }).click();
+  await ada.getByRole("button", { name: "Save" }).click();
+  await expect(ada.getByText(/^Published version/)).toBeVisible();
+
+  await erin.goto("/requests/new");
+  await expect(erin.getByText("Schritt 1 von 3")).toBeVisible();
+  await expect(erin.getByLabel("Dringend", { exact: true })).toBeVisible();
+  await erin.getByRole("button", { name: "Weiter" }).click();
+  await expect(erin.getByText("Beantworte diese Frage").first()).toBeVisible();
+  await expect(erin.getByRole("link", { name: "My requests" })).toBeVisible();
+});

@@ -4,10 +4,10 @@ import { toast } from "sonner";
 import { Page, PageHeader } from "@/components/layout/page";
 import { ErrorState, LoadingState } from "@/components/states";
 import { queryClient } from "@/lib/query";
-import { useT } from "@/i18n";
+import { translate, useT } from "@/i18n";
 import { formQuery } from "./api";
 import { FormRunner } from "./form-runner";
-import { messages } from "./messages";
+import { formMessages, messages } from "./messages";
 
 export function NewRequestPage() {
   const t = useT(messages);
@@ -27,7 +27,7 @@ export function NewRequestPage() {
           key={form.data.versionId}
           form={form.data}
           onSent={(number) => {
-            toast.success(t("sent", { number }));
+            toast.success(translate(formMessages, form.data.definition.language)("sent", { number }));
             void queryClient.invalidateQueries({ queryKey: ["requests"] });
             void navigate({ to: "/requests/$number", params: { number: String(number) } });
           }}

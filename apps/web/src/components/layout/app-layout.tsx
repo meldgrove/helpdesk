@@ -1,6 +1,6 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { ChevronsUpDown, Languages, LifeBuoy, LogOut, Settings, SunMoon } from "lucide-react";
+import { ChevronsUpDown, LifeBuoy, LogOut, Settings, SunMoon } from "lucide-react";
 import { hasRole } from "@helpdesk/shared/roles";
 import {
   Sidebar,
@@ -37,11 +37,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useMe } from "@/hooks/use-me";
 import { THEMES, useTheme, type Theme } from "@/lib/theme";
 import { authClient } from "@/lib/auth-client";
-import { api } from "@/lib/api";
 import { useAuthConfig } from "@/lib/auth-config";
 import { queryClient } from "@/lib/query";
 import { defineMessages, useT } from "@/i18n";
-import { useLocaleChoice, type LocaleChoice } from "@/i18n/provider";
 import { NAVIGATION, navMessages } from "@/app/navigation";
 import { useRoleLabel } from "@/lib/labels";
 
@@ -49,24 +47,11 @@ const messages = defineMessages({
   en: {
     signOut: "Sign out",
     skip: "Skip to content",
-    language: "Language",
-    browser: "Browser language",
     theme: "Appearance",
     system: "Device setting",
     light: "Light",
     dark: "Dark",
     settings: "My settings",
-  },
-  de: {
-    signOut: "Abmelden",
-    skip: "Zum Inhalt springen",
-    language: "Sprache",
-    browser: "Sprache des Browsers",
-    theme: "Darstellung",
-    system: "Wie das Gerät",
-    light: "Hell",
-    dark: "Dunkel",
-    settings: "Meine Einstellungen",
   },
 });
 
@@ -85,7 +70,6 @@ function UserMenu() {
   const me = useMe();
   const m = useT(messages);
   const { theme, setTheme } = useTheme();
-  const { choice, setChoice } = useLocaleChoice();
   const roleLabel = useRoleLabel();
   const label = me.name || me.email;
 
@@ -118,27 +102,6 @@ function UserMenu() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <Languages />
-            {m("language")}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuRadioGroup
-              value={choice}
-              onValueChange={(value) => {
-                setChoice(value as LocaleChoice);
-                // Emails follow the language chosen here.
-                if (value === "en" || value === "de")
-                  void api.patch("/me", { locale: value }).catch(() => undefined);
-              }}
-            >
-              <DropdownMenuRadioItem value="browser">{m("browser")}</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="en">English</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="de">Deutsch</DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <SunMoon />

@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { useLocale, useT } from "@/i18n";
+import { useT } from "@/i18n";
 import { common } from "@/i18n/common";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { useUrgencyLabel } from "@/lib/labels";
@@ -45,7 +45,6 @@ const SERVER_FIELDS = {
 export function NewTicketPage() {
   const t = useT(messages);
   const tc = useT(common);
-  const locale = useLocale();
   const urgencyLabel = useUrgencyLabel();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -104,7 +103,7 @@ export function NewTicketPage() {
       toast.success(t("createdToast", { number }));
       void navigate({ to: "/tickets/$number", params: { number: String(number) } });
     } catch (error) {
-      const unmatched = applyServerErrors(form, error, locale, SERVER_FIELDS);
+      const unmatched = applyServerErrors(form, error, SERVER_FIELDS);
       if (!(error instanceof ApiError && error.fields)) toast.error(errorMessage(error));
       else if (unmatched.length > 0) toast.error(unmatched.join(" "));
     }
