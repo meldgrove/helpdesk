@@ -46,8 +46,8 @@ Mailpit at http://localhost:8028 once a superadmin sets up SMTP
 
 ## Documentation
 
-- [Deployment](docs/deployment.md): Docker Compose, sign-in, upgrades,
-  backups, Sentry.
+- [Deployment](docs/deployment.md): Coolify or a Debian server, sign-in,
+  upgrades, automatic updates, backups, Sentry.
 - [Configuration](docs/configuration.md): every environment variable.
 - [Identity and access](docs/identity-and-access.md): roles, Keycloak and
   other providers.
