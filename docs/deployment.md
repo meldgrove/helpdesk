@@ -1,23 +1,27 @@
 # Deployment
 
-For the person who runs the helpdesk on a server: requirements, a setup
-with Docker Compose, sign-in, upgrades, backups, Sentry and troubleshooting.
-Every environment variable is described in [Configuration](configuration.md);
-the form, categories, email and Slack are set up afterwards in the app
+For the person who runs the helpdesk on a server: requirements, the setup
+on [Coolify](#coolify) or on a [Debian server](#debian), sign-in, upgrades,
+automatic updates, backups, Sentry and troubleshooting. Every environment
+variable is described in [Configuration](configuration.md); the form,
+categories, email and Slack are set up afterwards in the app
 ([Admin guide](admin-guide.md)).
 
 ## Requirements
 
+- **Coolify, or a server with Debian 12 or later** (or a similar system with
+  systemd and apt, such as Ubuntu 24.04), with Docker Engine and its Compose
+  plugin.
 - **PostgreSQL 16 or later.**
-- **Docker with Docker Compose.** Without Docker you need Node.js 26.
-- **A reverse proxy that terminates HTTPS.**
+- **A reverse proxy that terminates HTTPS**: Coolify's own, or Caddy on
+  Debian.
 - **An OpenID Connect provider** for sign-in whose groups decide the roles:
   Keycloak, or any provider that puts groups into the sign-in
   ([Identity and access](identity-and-access.md)).
 - **Disk space for uploaded files** (a volume; up to 10 MB per file).
 - Outgoing connections to your mail server or MailerSend, and to Slack.
 
-## Setup with Docker Compose
+## What runs
 
 Each [release](https://github.com/meldgrove/helpdesk/releases) publishes the
 image `ghcr.io/meldgrove/helpdesk` for linux/amd64 and linux/arm64, tagged
@@ -34,29 +38,87 @@ the releases within a series install without anyone acting.
 The image runs as an unprivileged user (uid 1000). `web` listens on port
 3000, published on `127.0.0.1:3000` for a reverse proxy on the same machine;
 `HELPDESK_PORT` changes the host port. Uploaded files are stored in the
-volume `attachments` (`/data/attachments` in the container).
-
-1. **Get the files:** clone the repository and check out the release, e.g.
-   `git checkout v0.1.0`. Platforms that read `compose.yaml` from the
-   repository follow the branch `stable`, which is at the newest release.
-2. **Create `.env`** next to `compose.yaml` from `.env.example` and set
-   production values: `HELPDESK_VERSION`, `APP_URL`, `DATABASE_URL`, new
-   secrets (`openssl rand -base64 32` for `AUTH_SECRET` and
-   `ENCRYPTION_KEY`), the `OIDC_*` values, `DIRECTORY` and the groups
-   ([Identity and access](identity-and-access.md)), and your address in
-   `SUPERADMIN_EMAILS`. Remove `NODE_ENV=development` and `RUN_MIGRATIONS`.
-3. **Start:** `docker compose up -d` (with `-f compose.yaml -f
-compose.postgres.yaml` and `POSTGRES_PASSWORD` for the bundled database).
-4. **Point the reverse proxy** at `127.0.0.1:3000`, open `APP_URL` and sign
-   in.
-5. **Continue in the app** ([Admin guide](admin-guide.md)): set up email and
-   Slack, then the categories and the form.
+volume `attachments` (`/data/attachments` in the container). The branch
+`stable` is at the newest release; `main` has changes that are not released
+yet.
 
 ### One container
 
 Platforms that run a single image (no Compose) can use the command `all`
 with `RUN_MIGRATIONS=true`: the web app and the worker then share one
 process. Mount a volume at `/data/attachments`.
+
+## Coolify
+
+1. **Database:** create a PostgreSQL resource (16 or later) and copy its
+   internal URL.
+2. **Application:** create a Docker Compose resource from the public
+   repository `https://github.com/meldgrove/helpdesk`, branch `stable`,
+   Docker Compose location `/compose.yaml`. Under Advanced, set Auto deploy
+   to "Manual deployments only", so that only releases deploy, and turn on
+   "Connect To Predefined Network", so that the app reaches the database.
+3. **Domain:** assign the domain, such as `https://helpdesk.example.org`, to
+   `web`, port 3000.
+4. **Register the app at your provider** with the redirect URL
+   `<APP_URL>/api/auth/callback/oidc` ([Identity and access](identity-and-access.md)).
+5. **Environment variables** of the resource: `HELPDESK_VERSION` (a series
+   such as `0.1`, see [Automatic updates](#automatic-updates)), `APP_URL`
+   (the domain), `DATABASE_URL` (the database's internal URL), new secrets
+   (`openssl rand -base64 32` for `AUTH_SECRET` and `ENCRYPTION_KEY`), the
+   `OIDC_*` values, `DIRECTORY` and the groups
+   ([Identity and access](identity-and-access.md)), and your address in
+   `SUPERADMIN_EMAILS`.
+6. **Deploy**, open `APP_URL` and sign in.
+7. **Continue in the app** ([Admin guide](admin-guide.md)): set up email and
+   Slack, then the categories and the form.
+8. **Automatic updates:** set them up [on Coolify](#on-coolify).
+
+## Debian
+
+On a server with Debian 12 or later, or a similar system such as Ubuntu,
+run the commands as root (`sudo -i`).
+
+1. **Docker:** install Docker Engine and the Compose plugin from Docker's
+   apt repository ([Debian](https://docs.docker.com/engine/install/debian/),
+   [Ubuntu](https://docs.docker.com/engine/install/ubuntu/)), and Git:
+   `apt install git`.
+2. **Get the files** at the newest release:
+
+   ```sh
+   git clone --branch stable https://github.com/meldgrove/helpdesk.git /srv/helpdesk
+   cd /srv/helpdesk
+   ```
+
+3. **Register the app at your provider** with the redirect URL
+   `<APP_URL>/api/auth/callback/oidc` ([Identity and access](identity-and-access.md)).
+4. **Create `.env`** from `.env.example` (`cp .env.example .env`,
+   `chmod 600 .env`) and set production values: `HELPDESK_VERSION` (a
+   series such as `0.1`), `APP_URL`, `DATABASE_URL`, new secrets
+   (`openssl rand -base64 32` for `AUTH_SECRET` and `ENCRYPTION_KEY`), the
+   `OIDC_*` values, `DIRECTORY` and the groups
+   ([Identity and access](identity-and-access.md)), and your address in
+   `SUPERADMIN_EMAILS`. Remove `NODE_ENV=development` and `RUN_MIGRATIONS`.
+   Without a database of your own, add
+   `COMPOSE_FILE=compose.yaml:compose.postgres.yaml`, a `POSTGRES_PASSWORD`
+   (`openssl rand -hex 32`) and
+   `DATABASE_URL=postgres://helpdesk:<POSTGRES_PASSWORD>@postgres:5432/helpdesk`.
+5. **Start:** `docker compose up -d --pull always`.
+6. **HTTPS:** point the domain's DNS at the server, install Caddy
+   (`apt install caddy`), and replace `/etc/caddy/Caddyfile` with:
+
+   ```text
+   helpdesk.example.org {
+   	reverse_proxy 127.0.0.1:3000
+   }
+   ```
+
+   Then `systemctl reload caddy`. Caddy gets the certificate itself. With
+   `HELPDESK_PORT` set, use that port instead of 3000.
+
+7. Open `APP_URL` and sign in.
+8. **Continue in the app** ([Admin guide](admin-guide.md)): set up email and
+   Slack, then the categories and the form.
+9. **Automatic updates:** set them up [on Debian](#on-debian).
 
 ## Health checks
 
@@ -69,20 +131,56 @@ process. Mount a volume at `/data/attachments`.
 
 1. Read the release notes. Releases with **Upgrade steps needed** start a
    new series and list what to do.
-2. Change `HELPDESK_VERSION` (or let the updater do it, below) and run
-   `docker compose up -d`. The `migrate` service applies database migrations
-   before `web` and `worker` start.
+2. Take the steps, then move to the new series:
+   - **Coolify:** change `HELPDESK_VERSION` in the resource's environment
+     variables and redeploy. Coolify reads `compose.yaml` from `stable`,
+     which is at the newest release.
+   - **Debian:** in `/srv/helpdesk`, run `git pull` (the newest release's
+     `compose.yaml`), change `HELPDESK_VERSION` in `.env`, and run
+     `docker compose up -d --pull always`.
 
-### Automatic updates
+The `migrate` service applies database migrations before `web` and `worker`
+start.
 
-The optional `updater` service redeploys when the tag in `HELPDESK_VERSION`
-points to a new image. It needs the platform's deploy link in
-`UPDATE_DEPLOY_HOOK_URL` (and `UPDATE_DEPLOY_HOOK_TOKEN` when the link needs
-a bearer token); without it, it does nothing. Use a series tag such as `0.1`
-to get every release that installs without steps. `UPDATE_COOLDOWN` (default
-`3d`) lets a release settle before it installs; `UPDATE_WINDOW` (e.g.
-`02:00-05:00`, time zone `TZ`) limits when. See
+## Automatic updates
+
+The `updater` service installs new releases of the tag in
+`HELPDESK_VERSION`: with a series such as `0.1`, every release that installs
+without steps; with `latest`, every release, also those with upgrade steps.
+A release installs once the updater has seen it for three days
+(`UPDATE_COOLDOWN`: `0` installs within the hour, `7d` waits a week), and with `UPDATE_WINDOW` (such
+as `02:00-05:00`, in the time zone `TZ`) only then. Set up
+[backups](#backups) first: migrations run without anyone watching. Details:
 [meldgrove/updater](https://github.com/meldgrove/updater).
+
+### On Coolify
+
+1. Under Settings > Advanced, turn on API Access if it is off.
+2. Under Keys & Tokens > API Tokens, create a token with only the `deploy`
+   permission; clear `read`. Coolify shows it only once.
+3. In the Helpdesk resource, select Webhooks and copy Deploy Webhook.
+4. In the resource's environment variables, set `UPDATE_DEPLOY_HOOK_URL` to
+   the webhook and `UPDATE_DEPLOY_HOOK_TOKEN` to the token, then redeploy.
+
+The `updater` log then names the tag it watches.
+
+### On Debian
+
+As root in `/srv/helpdesk`, with `UPDATE_DEPLOY_HOOK_URL` empty:
+
+```sh
+docker compose up -d --pull always
+docker compose run --rm -T --pull always updater host-setup > updater-setup.sh
+sh updater-setup.sh
+```
+
+The first command starts the image the tag points to now, which the updater
+takes as installed. The second writes the setup script from the updater's
+image; read it before you run it. The script installs a systemd unit that
+waits for the updater's request, then pulls the new image and runs
+`docker compose up -d`, migrations first. `docker compose logs updater` names
+the tag it watches, and `journalctl -u meldgrove-updater-helpdesk.service`
+shows each installation. `sh updater-setup.sh remove` switches it off.
 
 ## Backups
 
