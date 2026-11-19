@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { accounts, settings, users } from "../db/schema";
@@ -28,6 +28,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   delete process.env.DIRECTORY;
   delete process.env.OIDC_GROUPS_CLAIM;
   resetConfigForTests();
@@ -56,6 +57,26 @@ describe("roles at sign-in from the groups claim (DIRECTORY=oidc)", () => {
     resetConfigForTests();
     const admin = await signedIn("admin@example.org", { realm_access: { roles: ["helpdesk/admins"] } });
     expect(await refreshAccessAtSignIn(admin.id)).toBe("admin");
+  });
+
+  it("uses UserInfo groups only for the signed-in subject", async () => {
+    const user = await signedIn("op@example.org", {});
+    await getDb().update(accounts).set({ accessToken: "test-token" }).where(eq(accounts.userId, user.id));
+    const issuer = process.env.OIDC_ISSUER!;
+    let subject = "subject-1";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.endsWith("/.well-known/openid-configuration")) {
+          return Response.json({ issuer, userinfo_endpoint: `${issuer}/userinfo` });
+        }
+        return Response.json({ sub: subject, groups: ["helpdesk/operators"] });
+      }),
+    );
+
+    expect(await refreshAccessAtSignIn(user.id)).toBe("operator");
+    subject = "different-subject";
+    expect(await refreshAccessAtSignIn(user.id)).toBeNull();
   });
 
   it("always lets SUPERADMIN_EMAILS in", async () => {

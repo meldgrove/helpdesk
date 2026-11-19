@@ -66,7 +66,9 @@ the role they had.
 
 The app reads the groups claim of each sign-in (`OIDC_GROUPS_CLAIM`, default
 `groups`), from the ID token or, when it is not there, from the userinfo
-endpoint. People appear in the app, and can be assigned, after their first
+endpoint. UserInfo must identify the same person as the ID token. If the
+app cannot verify the groups from UserInfo, it refuses the new sign-in.
+People appear in the app, and can be assigned, after their first
 sign-in; a changed group takes effect at their next sign-in (sessions last a
 week).
 
