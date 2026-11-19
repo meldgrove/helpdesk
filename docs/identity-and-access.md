@@ -69,8 +69,8 @@ The app reads the groups claim of each sign-in (`OIDC_GROUPS_CLAIM`, default
 endpoint. UserInfo must identify the same person as the ID token. If the
 app cannot verify the groups from UserInfo, it refuses the new sign-in.
 People appear in the app, and can be assigned, after their first
-sign-in; a changed group takes effect at their next sign-in (sessions last a
-week).
+sign-in. A changed group takes effect at the next sign-in, which the app
+requires after at most a week.
 
 Set the `GROUP_*` variables to the values the claim holds:
 

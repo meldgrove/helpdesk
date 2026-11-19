@@ -9,6 +9,8 @@ import { CLIENT_IP_HEADER } from "../http/client-ip";
 import { logger } from "../logger";
 import { refreshAccessAtSignIn } from "../directory/sign-in";
 
+export const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
+
 /**
  * Sign-in only through the OpenID Connect provider. Anyone the provider
  * knows may try; a session starts only when the person has a role, which
@@ -41,9 +43,11 @@ function createAuth() {
     },
     emailAndPassword: { enabled: false },
     session: {
-      expiresIn: 60 * 60 * 24 * 7,
+      expiresIn: SESSION_LIFETIME_SECONDS,
+      // Claim-based roles can only be refreshed by signing in again.
+      disableSessionRefresh: settings.DIRECTORY === "oidc",
       updateAge: 60 * 60 * 24,
-      // Short cache: losing access takes effect within a minute.
+      // Protected routes check the current session and role in the database.
       cookieCache: { enabled: true, maxAge: 60 },
     },
     account: {
