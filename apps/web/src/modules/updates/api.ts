@@ -70,7 +70,7 @@ export const fetchUpdates = (signal?: AbortSignal) => call("GET", "/updates", un
 const signedOutPages = new WeakSet<QueryClient>();
 const signedOutListeners = new Set<() => void>();
 
-function subscribeSignedOut(listener: () => void) {
+export function subscribeSignedOut(listener: () => void) {
   signedOutListeners.add(listener);
   return () => void signedOutListeners.delete(listener);
 }

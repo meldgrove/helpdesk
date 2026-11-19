@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { UpdatesResponse, UpdaterStatus } from "@helpdesk/shared/api/updates";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { renderWithProviders } from "@/test-utils";
+import { updatesKey } from "./api";
 import { UpdateButton } from "./update-button";
 import { UpdatesPage } from "./updates-page";
 
@@ -572,6 +573,41 @@ describe("UpdateButton", () => {
     expect(calls(fetch)).toHaveLength(requests);
     expect(stored()).toMatchObject({ version: "0.2.1" });
     act(() => focusManager.setFocused(undefined));
+  });
+
+  it("keeps an unclear attempt past its deadline once another request finds a sign-in page", async () => {
+    const user = fakeClock();
+    const error = vi.spyOn(toast, "error");
+    storeAttempt({ confirmed: false, reason: "Failed to fetch" });
+    const fetch = routeFetch((method, path) => {
+      // The install watch's status request stays under way.
+      if (path === "/updates") return new Promise<never>(() => {});
+      if (path === "/updates/check")
+        return { text: "<!doctype html><title>Sign in</title>", contentType: "text/html" };
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(updatesKey, answer(status()));
+    render(
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <UpdateButton />
+          <UpdatesPage />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByRole("button", { name: "Installing 0.2.1…" })).toBeInTheDocument();
+    await waitFor(() => expect(calls(fetch)).toContain("GET /api/v1/updates"));
+    // The Updates page's check finds the sign-in page while the watch's request is under way.
+    await user.click(screen.getByRole("button", { name: "Check for updates" }));
+    await waitFor(() => expect(error).toHaveBeenCalledWith("Sign in again."));
+    await act(() => vi.advanceTimersByTimeAsync(61_000));
+
+    expect(stored()).toMatchObject({ version: "0.2.1", confirmed: false });
+    expect(error).not.toHaveBeenCalledWith(expect.stringMatching(/^The installation/));
+    expect(calls(fetch).filter((call) => call === "GET /api/v1/updates")).toHaveLength(1);
   });
 
   it("does not follow the installation again after Stop waiting while the updater is away", async () => {

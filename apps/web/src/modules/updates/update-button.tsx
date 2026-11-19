@@ -17,6 +17,7 @@ import {
   fetchUpdates,
   isPageSignedOut,
   markSignedOut,
+  subscribeSignedOut,
   updatesKey,
   useCheckUpdates,
   useInstallUpdate,
@@ -114,6 +115,8 @@ function useInstallWatch(onFailed: () => void) {
       deadlineTimer = setTimeout(
         () => {
           const current = pendingRef.current;
+          // Signed out: the attempt stays for a later page load.
+          if (isPageSignedOut(client)) return;
           if (current && !current.confirmed && installKey(current.version, current.startedAt) === key) {
             halt();
             setRestarting(false);
@@ -205,8 +208,18 @@ function useInstallWatch(onFailed: () => void) {
       }
       timer = setTimeout(() => void tick(), POLL_MS);
     };
+    // Another request of the page found the session ended: stop the request under way and
+    // the deadline at once, and keep the attempt.
+    const unsubscribe = subscribeSignedOut(() => {
+      if (!isPageSignedOut(client)) return;
+      halt();
+      setRestarting(false);
+    });
     void tick();
-    return halt;
+    return () => {
+      unsubscribe();
+      halt();
+    };
   }, [key, client, t, onFailed, setPending]);
 
   // "This takes longer than expected" after 15 minutes: a timer of its own, not tied to polls returning.
