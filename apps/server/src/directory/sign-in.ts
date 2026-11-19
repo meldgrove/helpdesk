@@ -115,8 +115,9 @@ export async function refreshAccessAtSignIn(userId: string, tokens: SignInTokens
         : await signInGroups(claims, subject, tokens.accessToken);
       role = roleFromGroups(groups);
     }
-  } catch (error) {
-    logger.warn({ err: error, userId }, "could not read the groups at sign-in");
+  } catch {
+    // Request errors can include an invalid Authorization header value.
+    logger.warn({ userId }, "could not read the groups at sign-in");
     return keycloakMode && user.directoryId === subject
       ? (roleSchema.safeParse(user.role).data ?? null)
       : null;

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { accounts, settings, users } from "../db/schema";
+import { logger } from "../logger";
 import { resetConfigForTests } from "../config";
 import { createUser, resetDatabase } from "../test/helpers";
 import { refreshAccessAtSignIn, setKeycloakClientForTests } from "./sign-in";
@@ -64,19 +65,26 @@ describe("roles at sign-in from the groups claim (DIRECTORY=oidc)", () => {
     const tokens = { ...user.tokens, accessToken: "test-token" };
     const issuer = process.env.OIDC_ISSUER!;
     let subject = "subject-1";
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => {
-        if (url.endsWith("/.well-known/openid-configuration")) {
-          return Response.json({ issuer, userinfo_endpoint: `${issuer}/userinfo` });
-        }
-        return Response.json({ sub: subject, groups: ["helpdesk/operators"] });
-      }),
-    );
+    const fetchStub = vi.fn(async (url: string) => {
+      if (url.endsWith("/.well-known/openid-configuration")) {
+        return Response.json({ issuer, userinfo_endpoint: `${issuer}/userinfo` });
+      }
+      return Response.json({ sub: subject, groups: ["helpdesk/operators"] });
+    });
+    vi.stubGlobal("fetch", fetchStub);
 
     expect(await refreshAccessAtSignIn(user.id, tokens)).toBe("operator");
     subject = "different-subject";
     expect(await refreshAccessAtSignIn(user.id, tokens)).toBeNull();
+
+    const warn = vi.spyOn(logger, "warn");
+    fetchStub.mockRejectedValueOnce(new Error("private request data"));
+    try {
+      expect(await refreshAccessAtSignIn(user.id, tokens)).toBeNull();
+      expect(warn).toHaveBeenLastCalledWith({ userId: user.id }, "could not read the groups at sign-in");
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("requires a current ID token and keeps an existing subject binding", async () => {
