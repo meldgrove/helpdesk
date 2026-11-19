@@ -6,11 +6,11 @@
 #   docker compose up -d
 #
 # HELPDESK_VERSION in .env selects the release of ghcr.io/meldgrove/helpdesk,
-# e.g. 0.1.0. To upgrade, read the release notes, change it, and run
-# `docker compose up -d` again. A tag that moves (0.1, latest) lets `updater`
-# install new releases (docs/deployment.md, Automatic updates). On a platform
-# that does not pull images when it deploys, PULL_POLICY=always makes every
-# start pull them again.
+# e.g. 0.1.0. `updater` installs new releases (docs/deployment.md, Automatic
+# updates): on a Debian server it writes the installed version into
+# HELPDESK_VERSION. To upgrade by hand, read the release notes, change it, and
+# run `docker compose up -d` again. On a platform that does not pull images
+# when it deploys, PULL_POLICY=always makes every start pull them again.
 #
 # Without a PostgreSQL of your own, add compose.postgres.yaml:
 #   docker compose -f compose.yaml -f compose.postgres.yaml up -d
@@ -33,6 +33,9 @@ x-app-environment: &app-environment
   OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?Set OIDC_CLIENT_SECRET}
   # The reverse proxy in front of the app sets X-Forwarded-For.
   TRUST_PROXY: ${TRUST_PROXY:-true}
+  # The update button of superadmins asks the `updater` service; an empty
+  # UPDATER_URL gets this default too.
+  UPDATER_URL: ${UPDATER_URL:-http://updater:8080}
 
 x-app: &app
   image: *image
@@ -92,21 +95,24 @@ services:
       retries: 3
       start_period: 30s
 
-  # Automatic updates (docs/deployment.md): off until UPDATE_DEPLOY_HOOK_URL
-  # is set (Coolify) or the server watches the volume `updater` (Debian:
-  # `updater host-setup`). When the tag in HELPDESK_VERSION points to a new
-  # image, it calls that deploy link or leaves a request in the volume, and
-  # Coolify or the server deploys the new release.
+  # Automatic updates and the superadmins' update button (docs/deployment.md):
+  # installs nothing until UPDATE_DEPLOY_HOOK_URL is set (Coolify) or the
+  # server watches the volume `updater` (Debian: `updater host-setup`). Then it
+  # calls that deploy link or leaves a request in the volume, and Coolify or
+  # the server deploys the new version. Its API (port 8080) is only for the
+  # app: never publish it.
   updater:
-    image: ghcr.io/meldgrove/updater:0.1
+    image: ghcr.io/meldgrove/updater:0.2
     pull_policy: ${PULL_POLICY:-missing}
     restart: unless-stopped
     environment:
       IMAGE: *image
+      # Host mode writes the installed version into this variable in .env.
+      VERSION_VARIABLE: HELPDESK_VERSION
       DEPLOY_HOOK_URL: ${UPDATE_DEPLOY_HOOK_URL:-}
       DEPLOY_HOOK_TOKEN: ${UPDATE_DEPLOY_HOOK_TOKEN:-}
-      # A release installs once it has been out this long, and only inside
-      # the window, if one is set (e.g. 02:00-05:00, in the time zone TZ).
+      # A stable release installs once it has been out this long, and only
+      # inside the window, if one is set (e.g. 02:00-05:00, in the time zone TZ).
       COOLDOWN: ${UPDATE_COOLDOWN:-3d}
       WINDOW: ${UPDATE_WINDOW:-}
       TZ: ${TZ:-UTC}

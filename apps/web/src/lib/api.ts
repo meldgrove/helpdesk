@@ -8,6 +8,8 @@ export class ApiError extends Error {
     message: string,
     /** Messages by field path, e.g. `{ "config.url": "Enter a URL" }`. */
     readonly fields?: Record<string, string>,
+    /** The parsed response body, for answers that carry more than the error. */
+    readonly body?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
@@ -34,7 +36,8 @@ export function setUnauthorizedHandler(handler: () => void) {
   onUnauthorized = handler;
 }
 
-async function parse<T>(response: Response): Promise<T> {
+/** Reads an API answer: its JSON, or the `ApiError` of an error status. */
+export async function parse<T>(response: Response): Promise<T> {
   if (response.status === 204) return undefined as T;
   const text = await response.text();
   let data: unknown;
@@ -44,13 +47,20 @@ async function parse<T>(response: Response): Promise<T> {
     data = null;
   }
   if (!response.ok) {
-    const body = data as Partial<ErrorBody> | null;
+    const body = data as Partial<ErrorBody> | { error?: unknown } | null;
+    const error = body?.error;
     if (response.status === 401) onUnauthorized?.();
+    // Most errors are `{ error: { code, message } }`; the updates routes answer `{ error: "…", … }`.
+    if (typeof error === "string") {
+      throw new ApiError(response.status, "conflict", error, undefined, data);
+    }
+    const details = error as Partial<ErrorBody["error"]> | undefined;
     throw new ApiError(
       response.status,
-      body?.error?.code ?? "internal_error",
-      body?.error?.message ?? `Request failed (${response.status})`,
-      body?.error?.fields,
+      details?.code ?? "internal_error",
+      details?.message ?? `Request failed (${response.status})`,
+      details?.fields,
+      data,
     );
   }
   return data as T;

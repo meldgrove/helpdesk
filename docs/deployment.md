@@ -27,7 +27,9 @@ Each [release](https://github.com/meldgrove/helpdesk/releases) publishes the
 image `ghcr.io/meldgrove/helpdesk` for linux/amd64 and linux/arm64, tagged
 with its version (`0.1.0`), its series (`0.1`; from 1.0.0 the major version,
 `1`) and `latest`. A release that needs manual steps starts a new series, so
-the releases within a series install without anyone acting.
+the releases within a series install without anyone acting. Every change on
+`main` that passes CI is published as a preview: `0.1.1-preview.3` (three
+changes after 0.1.0) and the tag `preview`.
 
 | File                    | Contains                                                                           |
 | ----------------------- | ---------------------------------------------------------------------------------- |
@@ -62,7 +64,7 @@ process. Mount a volume at `/data/attachments`.
 4. **Register the app at your provider** with the redirect URL
    `<APP_URL>/api/auth/callback/oidc` ([Identity and access](identity-and-access.md)).
 5. **Environment variables** of the resource: `HELPDESK_VERSION` (a series
-   such as `0.1`, see [Automatic updates](#automatic-updates)), `APP_URL`
+   such as `0.1`, see [On Coolify](#on-coolify)), `APP_URL`
    (the domain), `DATABASE_URL` (the database's internal URL), new secrets
    (`openssl rand -base64 32` for `AUTH_SECRET` and `ENCRYPTION_KEY`), the
    `OIDC_*` values, `DIRECTORY` and the groups
@@ -92,8 +94,8 @@ run the commands as root (`sudo -i`).
 3. **Register the app at your provider** with the redirect URL
    `<APP_URL>/api/auth/callback/oidc` ([Identity and access](identity-and-access.md)).
 4. **Create `.env`** from `.env.example` (`cp .env.example .env`,
-   `chmod 600 .env`) and set production values: `HELPDESK_VERSION` (a
-   series such as `0.1`), `APP_URL`, `DATABASE_URL`, new secrets
+   `chmod 600 .env`) and set production values: `HELPDESK_VERSION` (the
+   newest release, such as `0.1.0`), `APP_URL`, `DATABASE_URL`, new secrets
    (`openssl rand -base64 32` for `AUTH_SECRET` and `ENCRYPTION_KEY`), the
    `OIDC_*` values, `DIRECTORY` and the groups
    ([Identity and access](identity-and-access.md)), and your address in
@@ -136,7 +138,8 @@ run the commands as root (`sudo -i`).
      variables and redeploy. Coolify reads `compose.yaml` from `stable`,
      which is at the newest release.
    - **Debian:** in `/srv/helpdesk`, run `git pull` (the newest release's
-     `compose.yaml`), change `HELPDESK_VERSION` in `.env`, and run
+     `compose.yaml`), then click **Install anyway…** at the update button,
+     or change `HELPDESK_VERSION` in `.env` and run
      `docker compose up -d --pull always`.
 
 The `migrate` service applies database migrations before `web` and `worker`
@@ -144,16 +147,42 @@ start.
 
 ## Automatic updates
 
-The `updater` service installs new releases of the tag in
-`HELPDESK_VERSION`: with a series such as `0.1`, every release that installs
-without steps; with `latest`, every release, also those with upgrade steps.
-A release installs once the updater has seen it for three days
-(`UPDATE_COOLDOWN`: `0` installs within the hour, `7d` waits a week), and with `UPDATE_WINDOW` (such
-as `02:00-05:00`, in the time zone `TZ`) only then. Set up
-[backups](#backups) first: migrations run without anyone watching. Details:
-[meldgrove/updater](https://github.com/meldgrove/updater).
+The `updater` service ([meldgrove/updater](https://github.com/meldgrove/updater))
+checks for new versions every hour, installs them, and tells superadmins in
+the app. Set up [backups](#backups) first: migrations run without anyone
+watching. There are two channels:
+
+- **Stable** (default): releases. A release without upgrade steps (the same
+  series) installs once it has been out for three days (`UPDATE_COOLDOWN`:
+  `0` installs at the next check, `7d` waits a week). A release with upgrade
+  steps (a new series) is shown in the app but never installs on its own.
+- **Preview**: every change on `main` as soon as CI passed for it, before it
+  is released, and every release; previews install within the hour. New
+  features first, and now and then a new bug. Switching back to Stable
+  installs nothing: the helpdesk keeps the preview until a release is newer.
+
+With `UPDATE_WINDOW` (such as `02:00-05:00`, in the time zone `TZ`), updates
+install automatically only then.
+
+### Update button
+
+Superadmins see an update icon in the header: a click checks for updates; a
+dot means an update is available, with its changes, its release notes, when
+it installs, and **Install now**. While it installs, the icon shows the
+progress, and the page reloads when the helpdesk is back; when an update
+fails, it shows why. With automatic updates off on the server, the icon
+still shows new releases, but nothing installs from the app.
+**Administration → Updates** shows the installed version and sets the
+channel. The app reaches the updater at `UPDATER_URL`
+(default `http://updater:8080`); without it, the icon says "No update
+service". The updater's API has no authentication: never publish its port.
 
 ### On Coolify
+
+Coolify installs the image that the tag in `HELPDESK_VERSION` points to: a
+series such as `0.1` (releases without upgrade steps), `latest` (every
+release), or `preview` (the Preview channel). The tag decides the channel;
+the app cannot change it.
 
 1. Under Settings > Advanced, turn on API Access if it is off.
 2. Under Keys & Tokens > API Tokens, create a token with only the `deploy`
@@ -166,6 +195,12 @@ The `updater` log then names the tag it watches.
 
 ### On Debian
 
+The server installs the exact version: it writes it into `HELPDESK_VERSION`
+in `.env`, pulls the image, runs the migrations, starts the helpdesk and
+waits until it is healthy. When it does not become healthy, the server goes
+back to the version before, and the update button shows why. Superadmins
+choose the channel in the app.
+
 As root in `/srv/helpdesk`, with `UPDATE_DEPLOY_HOOK_URL` empty:
 
 ```sh
@@ -174,13 +209,31 @@ docker compose run --rm -T --pull always updater host-setup > updater-setup.sh
 sh updater-setup.sh
 ```
 
-The first command starts the image the tag points to now, which the updater
-takes as installed. The second writes the setup script from the updater's
-image; read it before you run it. The script installs a systemd unit that
-waits for the updater's request, then pulls the new image and runs
-`docker compose up -d`, migrations first. `docker compose logs updater` names
-the tag it watches, and `journalctl -u meldgrove-updater-helpdesk.service`
-shows each installation. `sh updater-setup.sh remove` switches it off.
+The first command starts the version in `HELPDESK_VERSION`, which the
+updater takes as installed. The second writes the setup script from the
+updater's image; read it before you run it. The script installs a systemd
+unit that waits for the updater's request and installs the version.
+`docker compose logs updater` shows the checks, and
+`journalctl -u meldgrove-updater-helpdesk.service` shows each installation.
+`sh updater-setup.sh remove` switches it off. The server installs images,
+not files: a release that changes `compose.yaml` needs a `git pull` (its
+upgrade steps say so).
+
+**Servers set up before the update button** (with updater 0.1 or an
+earlier release) get it, and the channel, this way: set `HELPDESK_VERSION`
+in `.env` to the release that brings the update button, or a newer one,
+then:
+
+```sh
+cd /srv/helpdesk
+git pull
+docker compose up -d --pull always
+docker compose run --rm -T --pull always updater host-setup > updater-setup.sh && sudo sh updater-setup.sh
+```
+
+The third command starts that release, so the helpdesk itself, not just
+the updater, runs a version with the button before the host setup runs
+again.
 
 ## Backups
 

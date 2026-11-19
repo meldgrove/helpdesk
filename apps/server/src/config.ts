@@ -31,6 +31,7 @@ const group = (fallback: string) =>
   );
 
 const EXAMPLE_SECRET = "change-me-to-a-long-random-value";
+const DEFAULT_UPDATER_URL = "http://updater:8080";
 
 const schema = z
   .object({
@@ -104,6 +105,14 @@ const schema = z
     MAILERSEND_API_URL: withDefault(z.url(), "https://api.mailersend.com/v1/"),
     /** Version of a release image, set by the release workflow; unset in images built from source. */
     APP_VERSION: optional(z.string().max(100)),
+    /**
+     * The Meldgrove Updater's API (the `updater` service of compose.yaml),
+     * for the superadmins' update button. Unset: the default; empty: off.
+     */
+    UPDATER_URL: z.preprocess(
+      (value) => (typeof value === "string" ? value.trim().replace(/\/+$/, "") : DEFAULT_UPDATER_URL),
+      z.union([z.literal(""), z.url({ protocol: /^https?$/ })]),
+    ),
     /** Error reports and performance data to Sentry or a compatible service; off when unset. */
     SENTRY_DSN: optional(z.url()),
     SENTRY_ENVIRONMENT: optional(z.string().max(64)),
