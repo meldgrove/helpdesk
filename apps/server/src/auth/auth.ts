@@ -1,4 +1,5 @@
-import { betterAuth } from "better-auth";
+import { APIError, betterAuth } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { genericOAuth } from "better-auth/plugins";
 import { eq, sql } from "drizzle-orm";
@@ -21,7 +22,11 @@ function createAuth() {
   const appUrl = new URL(settings.APP_URL);
   const callbackTokens = new WeakMap<Request, SignInTokens>();
   const rememberTokens = async (tokens: SignInTokens, context: { request?: Request } | null) => {
-    if (context?.request) callbackTokens.set(context.request, tokens);
+    const request = context?.request;
+    if (!request || new URL(request.url).pathname !== "/api/auth/callback/oidc" || !tokens.idToken) {
+      return false;
+    }
+    callbackTokens.set(request, tokens);
   };
   return betterAuth({
     appName: settings.APP_NAME,
@@ -55,6 +60,28 @@ function createAuth() {
       ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
     },
     emailAndPassword: { enabled: false },
+    hooks: {
+      before: createAuthMiddleware(async (context) => {
+        if (context.path === "/sign-in/social" && context.body?.idToken) {
+          throw new APIError("BAD_REQUEST", { message: "Sign in through the OpenID Connect provider" });
+        }
+      }),
+    },
+    user: {
+      validateUserInfo: async ({ user, source }) => {
+        if (source.action === "create-user" || !user.id) return;
+        const subject = source.oauth?.profile?.sub;
+        if (typeof subject !== "string" || !subject) return { error: "oidc_subject_required" };
+        const [existing] = await getDb()
+          .select({ directoryId: users.directoryId })
+          .from(users)
+          .where(eq(users.id, user.id));
+        // Better Auth calls this before writing the account link or profile.
+        if (existing?.directoryId && existing.directoryId !== subject) {
+          return { error: "oidc_subject_mismatch" };
+        }
+      },
+    },
     session: {
       expiresIn: SESSION_LIFETIME_SECONDS,
       // Claim-based roles can only be refreshed by signing in again.
