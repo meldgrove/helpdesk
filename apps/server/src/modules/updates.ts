@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import {
   updateChannelInputSchema,
   updateInstallInputSchema,
@@ -17,7 +18,8 @@ import { createUpdaterClient, type UpdaterClient, type UpdaterResult } from "../
  * an installation and the channel
  * (https://github.com/meldgrove/updater#the-apps-update-button). Every route
  * answers with `UpdatesResponse`: an updater error answer becomes 409 with
- * `error` and the latest status; no answer from UPDATER_URL (or an empty
+ * `error` and the latest status (the install route passes a 5xx through: the
+ * installation may have started); no answer from UPDATER_URL (or an empty
  * UPDATER_URL) is 200 with `reachable: false`.
  */
 const router = new Hono<AppEnv>();
@@ -33,16 +35,16 @@ async function respond(
   c: Context<AppEnv>,
   client: UpdaterClient | null,
   result: UpdaterResult | null,
-  success: 200 | 202 = 200,
+  options: { success?: 200 | 202; passServerErrors?: boolean } = {},
 ) {
   const app = { version: config().APP_VERSION ?? null };
   let body: UpdatesResponse;
-  let status: 200 | 202 | 409 = 200;
+  let status: ContentfulStatusCode = 200;
   if (!client || !result) {
     body = { app, reachable: false, updater: null, error: OFF };
   } else if (result.kind === "ok") {
     body = { app, reachable: true, updater: result.status, error: null };
-    status = success;
+    status = options.success ?? 200;
   } else if (result.kind === "unreachable") {
     logger.warn({ route: c.req.routePath, problem: "unreachable" }, "update service not reachable");
     body = { app, reachable: false, updater: null, error: result.error };
@@ -55,7 +57,10 @@ async function respond(
       updater: latest?.kind === "ok" ? latest.status : null,
       error: result.error,
     };
-    status = 409;
+    status =
+      options.passServerErrors && result.httpStatus >= 500 && result.httpStatus <= 599
+        ? (result.httpStatus as ContentfulStatusCode)
+        : 409;
   }
   return c.json(body, status);
 }
@@ -85,7 +90,7 @@ router.post("/updates/install", async (c) => {
       summary: `Started the update to ${version}`,
     });
   }
-  return respond(c, client, result, 202);
+  return respond(c, client, result, { success: 202, passServerErrors: true });
 });
 
 router.post("/updates/channel", async (c) => {

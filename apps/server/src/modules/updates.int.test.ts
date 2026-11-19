@@ -195,6 +195,31 @@ describe("updates", () => {
     expect(await getDb().select().from(auditLog)).toEqual([]);
   });
 
+  it("pass an updater's 5xx to an installation through: it may have started", async () => {
+    updater.reply((method) =>
+      method === "POST"
+        ? { status: 503, body: { error: "The deploy link did not answer." } }
+        : { body: updaterStatus() },
+    );
+
+    const response = await request("POST", "/api/v1/updates/install", {
+      userId: superadmin.id,
+      body: { version: "0.2.1" },
+    });
+
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({
+      app: { version: "0.2.0" },
+      reachable: true,
+      updater: updaterStatus(),
+      error: "The deploy link did not answer.",
+    });
+    expect(await getDb().select().from(auditLog)).toEqual([]);
+    // Other routes keep 409 for an updater's error answer.
+    const check = await request("POST", "/api/v1/updates/check", { userId: superadmin.id, body: {} });
+    expect(check.status).toBe(409);
+  });
+
   it("pass on a locked channel as 409", async () => {
     const locked = "The platform's image tag latest decides which updates install. Change it there.";
     updater.reply((method, path) =>

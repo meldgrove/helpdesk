@@ -36,7 +36,8 @@ export function setUnauthorizedHandler(handler: () => void) {
   onUnauthorized = handler;
 }
 
-async function parse<T>(response: Response): Promise<T> {
+/** Reads an API answer: its JSON, or the `ApiError` of an error status. */
+export async function parse<T>(response: Response): Promise<T> {
   if (response.status === 204) return undefined as T;
   const text = await response.text();
   let data: unknown;

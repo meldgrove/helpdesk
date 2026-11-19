@@ -6,18 +6,25 @@ import {
   buttonState,
   formatCooldown,
   hasPopover,
+  ignoreInstall,
   installAction,
-  installDidNotStart,
   installOutcome,
+  isIgnored,
   isOutage,
   isSignedOut,
   newAttempt,
+  observeError,
+  observeStatus,
   parseWindow,
+  readIgnoredInstall,
   readPendingInstall,
   RECONCILE_MS,
+  reconcileDeadline,
   SLOW_INSTALL_MS,
   trackInstall,
+  unconfirmedEnd,
   visibleNotes,
+  writeIgnoredInstall,
   writePendingInstall,
   type PendingInstall,
 } from "./state";
@@ -81,13 +88,23 @@ const pending: PendingInstall = {
   startedAt: NOW,
   confirmed: true,
   serverStartedAt: null,
+  earlier: null,
   reason: null,
   fromVersion: "0.2.0",
   outage: false,
+  answered: false,
+  lastError: null,
 };
 
 const installing = (version = "0.2.1", startedAt = "2026-11-19T09:00:01Z") =>
   ({ version, startedAt, manual: true, stage: "starting" }) as const;
+
+const lastResult = {
+  version: "0.2.1",
+  result: "failed",
+  message: "container web is unhealthy",
+  finishedAt: "2026-11-19T09:01:00Z",
+} as const;
 
 describe("buttonState", () => {
   it("is up to date without an update or a failure", () => {
@@ -109,12 +126,20 @@ describe("buttonState", () => {
 
   it("shows an available update", () => {
     const available = update();
-    expect(state(response(status({ available })))).toEqual({ kind: "available", update: available });
+    expect(state(response(status({ available })))).toEqual({
+      kind: "available",
+      update: available,
+      failure: null,
+    });
   });
 
   it("shows an update that needs upgrade steps only without an available one", () => {
     const attention = update({ version: "0.3.0" });
-    expect(state(response(status({ attention })))).toEqual({ kind: "attention", update: attention });
+    expect(state(response(status({ attention })))).toEqual({
+      kind: "attention",
+      update: attention,
+      failure: null,
+    });
     expect(state(response(status({ attention, available: update() })))?.kind).toBe("available");
   });
 
@@ -250,6 +275,21 @@ describe("buttonState", () => {
       expect(state(response(status({ last })), { failure })).toMatchObject({ kind: "failed", update: null });
     });
 
+    it("gives way to a newer offer and stays a line in it", () => {
+      const data = response(status({ available: update({ version: "0.2.1" }), last }));
+      expect(state(data, { failure })).toEqual({
+        kind: "available",
+        update: update({ version: "0.2.1" }),
+        failure: { version: "0.3.0", message: "migrate failed. 0.2.0 runs again." },
+      });
+      // Also after a reload, from the updater's last result alone.
+      expect(state(data)).toEqual(state(data, { failure }));
+      expect(state(response(status({ attention: update({ version: "0.3.1" }), last })))).toMatchObject({
+        kind: "attention",
+        failure: { version: "0.3.0" },
+      });
+    });
+
     it("gives way to a newer result", () => {
       const newer = {
         ...last,
@@ -273,8 +313,8 @@ describe("buttonState", () => {
   });
 
   it("opens a popover only when there is something to show", () => {
-    expect(hasPopover({ kind: "available", update: update() })).toBe(true);
-    expect(hasPopover({ kind: "attention", update: update() })).toBe(true);
+    expect(hasPopover({ kind: "available", update: update(), failure: null })).toBe(true);
+    expect(hasPopover({ kind: "attention", update: update(), failure: null })).toBe(true);
     expect(hasPopover({ kind: "failed", version: "0.2.1", update: update(), message: null })).toBe(true);
     expect(
       hasPopover({ kind: "installing", version: "0.2.1", stage: null, restarting: false, slow: false }),
@@ -389,6 +429,26 @@ describe("installOutcome", () => {
     );
   });
 
+  it("takes a result in the same second as an unclear attempt as fresh", () => {
+    // The attempt started at 09:00:00.700; the updater writes 09:00:00.
+    const attempt = { ...newAttempt("0.2.1", "0.2.0", NOW + 700), reason: "No answer within 10 seconds." };
+    const accepted = response(status({ last: last("accepted", "2026-11-19T09:00:00Z") }), "0.2.1");
+    const tracked = observeStatus(attempt, accepted, NOW + 2_000);
+    expect(tracked.confirmed).toBe(true);
+    expect(installOutcome(tracked, accepted)).toBe("done");
+  });
+
+  it("never takes the earlier result as the result of a retry in the same second", () => {
+    const earlier = last("failed", "2026-11-19T09:00:00Z");
+    const retry = newAttempt("0.2.1", "0.2.0", NOW + 400, earlier);
+    const before = response(status({ available: update(), last: earlier }));
+    expect(installOutcome(retry, before)).toBe("waiting");
+    expect(observeStatus(retry, before, NOW + 2_000).confirmed).toBe(false);
+    // The retry's own result, in the same second, counts.
+    const installed = response(status({ last: last("installed", "2026-11-19T09:00:00Z") }));
+    expect(installOutcome(retry, installed)).toBe("done");
+  });
+
   it("ignores a result of another version", () => {
     expect(installOutcome(pending, response(status({ last: { ...last("failed"), version: "0.2.2" } })))).toBe(
       "waiting",
@@ -415,15 +475,93 @@ describe("following an installation", () => {
     expect(tracked).toMatchObject({ version: "0.2.2", confirmed: true, startedAt: NOW + 2_000 });
   });
 
-  it("gives up an unconfirmed attempt after 60 s", () => {
-    expect(installDidNotStart(attempt, NOW + RECONCILE_MS)).toBe(false);
-    expect(installDidNotStart(attempt, NOW + RECONCILE_MS + 1)).toBe(true);
-    expect(installDidNotStart({ ...attempt, confirmed: true }, NOW + RECONCILE_MS + 1)).toBe(false);
+  it("ends an unconfirmed attempt 60 s after it started", () => {
+    expect(reconcileDeadline(attempt)).toBe(NOW + RECONCILE_MS);
+    expect(reconcileDeadline({ ...attempt, confirmed: true })).toBeNull();
+  });
+
+  it("could not confirm an attempt while every status request failed", () => {
+    const unclear = { ...attempt, reason: "No answer within 10 seconds." };
+    expect(unconfirmedEnd(unclear)).toEqual({ started: "unknown", detail: "No answer within 10 seconds." });
+    const failed = observeError(
+      observeError(unclear, new TypeError("Failed to fetch")),
+      new ApiError(502, "internal_error", "Bad gateway"),
+    );
+    expect(failed).toMatchObject({ outage: true, lastError: "Bad gateway", confirmed: false });
+    expect(unconfirmedEnd(failed)).toEqual({ started: "unknown", detail: "Bad gateway" });
+    const unreachable = observeStatus(failed, { ...response(null), error: "No connection." }, NOW);
+    expect(unconfirmedEnd(unreachable)).toEqual({ started: "unknown", detail: "No connection." });
+  });
+
+  it("did not start when a reachable status answered without it", () => {
+    const unclear = observeError(
+      { ...attempt, reason: "No answer within 10 seconds." },
+      new TypeError("Failed to fetch"),
+    );
+    const answered = observeStatus(unclear, response(status({ available: update() })), NOW + 4_000);
+    expect(answered).toMatchObject({ confirmed: false, answered: true });
+    expect(unconfirmedEnd(answered)).toEqual({ started: "no", detail: "No answer within 10 seconds." });
+    // A status before the install request's answer tells nothing.
+    expect(observeStatus(attempt, response(status()), NOW + 1_000).answered).toBe(false);
+    // A later failed request does not change that.
+    expect(unconfirmedEnd(observeError(answered, new TypeError("Failed to fetch"))).started).toBe("no");
+  });
+
+  it("counts reachable: false as an outage, so an accepted result without an app version completes", () => {
+    const followed = { ...attempt, confirmed: true };
+    const accepted = response(status({ last: { ...lastResult, result: "accepted", message: null } }), null);
+    expect(installOutcome(followed, accepted)).toBe("waiting");
+    const restarted = observeStatus(
+      followed,
+      { ...response(null, null), error: "No connection." },
+      NOW + 2_000,
+    );
+    expect(restarted).toMatchObject({ outage: true, lastError: "No connection." });
+    expect(installOutcome(observeStatus(restarted, accepted, NOW + 4_000), accepted)).toBe("done");
+    // An unchanged attempt stays the same object.
+    expect(observeStatus(restarted, { ...response(null, null), error: "No connection." }, NOW)).toBe(
+      restarted,
+    );
+  });
+});
+
+describe("Stop waiting", () => {
+  const started = "2026-11-19T09:00:01Z";
+
+  it("ignores the installation by the identity stored on the attempt", () => {
+    const ignored = ignoreInstall({ ...pending, serverStartedAt: started });
+    expect(isIgnored(ignored, installing("0.2.1", started))).toBe(true);
+    expect(isIgnored(ignored, installing("0.2.1", "2026-11-19T09:20:00Z"))).toBe(false);
+    expect(isIgnored(ignored, installing("0.2.2", started))).toBe(false);
+    expect(isIgnored(null, installing())).toBe(false);
+  });
+
+  it("ignores the first installation of the version since the attempt, when no status reported it", () => {
+    // Stopped while the updater did not answer: only the version and the attempt's start are known.
+    const ignored = ignoreInstall({ ...pending, startedAt: NOW + 400 });
+    expect(ignored).toEqual({ version: "0.2.1", serverStartedAt: null, startedAt: NOW + 400 });
+    expect(isIgnored(ignored, installing("0.2.1", "2026-11-19T09:00:00Z"))).toBe(true);
+    expect(isIgnored(ignored, installing("0.2.1", "2026-11-19T08:59:59Z"))).toBe(false);
+  });
+
+  it("remembers the ignored installation over a reload", () => {
+    const ignored = ignoreInstall({ ...pending, serverStartedAt: started });
+    writeIgnoredInstall(ignored);
+    expect(readIgnoredInstall()).toEqual(ignored);
+    writeIgnoredInstall(null);
+    expect(readIgnoredInstall()).toBeNull();
   });
 });
 
 describe("afterInstallAnswer", () => {
   const attempt = newAttempt("0.2.1", "0.2.0", NOW);
+
+  it("follows a 202 whose body could not be read", () => {
+    expect(afterInstallAnswer(attempt, { accepted: true }, NOW + 1_000)).toEqual({
+      pending: { ...attempt, confirmed: true },
+      error: null,
+    });
+  });
 
   it("follows an accepted installation", () => {
     const data = response(status({ installing: installing() }));
@@ -476,9 +614,12 @@ describe("afterInstallAnswer", () => {
         startedAt: NOW + 1_000,
         confirmed: true,
         serverStartedAt: "2026-11-19T09:00:01Z",
+        earlier: null,
         reason: null,
         fromVersion: "0.2.0",
         outage: false,
+        answered: false,
+        lastError: null,
       },
       error: "An installation runs.",
     });
@@ -513,6 +654,15 @@ describe("pending installation storage", () => {
   it("survives a reload", () => {
     writePendingInstall(pending);
     expect(readPendingInstall()).toEqual(pending);
+    const unclear = {
+      ...newAttempt("0.2.1", "0.2.0", NOW, lastResult),
+      reason: "Bad gateway",
+      outage: true,
+      answered: true,
+      lastError: "Failed to fetch",
+    };
+    writePendingInstall(unclear);
+    expect(readPendingInstall()).toEqual(unclear);
     writePendingInstall(null);
     expect(readPendingInstall()).toBeNull();
   });
