@@ -133,16 +133,22 @@ export function buttonState(input: {
   if (!data) return input.loadFailed ? { kind: "unreachable" } : null;
   if (!status) return { kind: "unreachable" };
 
-  // The offer failed before, or the last installation of exactly that version failed.
+  // The last installation failed and that version is still offered (as available or
+  // attention): its failure with Try again comes first.
   const lastFailed =
     status.last?.result === "failed" || status.last?.result === "rolled-back" ? status.last : null;
-  if (offer && lastFailed && (offer.failed || lastFailed.version === offer.version)) {
+  const failedOffer = lastFailed && offerOf(status, lastFailed.version);
+  if (lastFailed && failedOffer) {
     return {
       kind: "failed",
-      version: offer.version,
-      update: offer,
-      message: (lastFailed.version === offer.version ? lastFailed.message : null) ?? offer.failed,
+      version: failedOffer.version,
+      update: failedOffer,
+      message: lastFailed.message ?? failedOffer.failed,
     };
+  }
+  // The offer failed before, while the last installation was another version.
+  if (offer && lastFailed && offer.failed) {
+    return { kind: "failed", version: offer.version, update: offer, message: offer.failed };
   }
   // A newer version is offered: it replaces the failure, which stays as a line in it.
   const earlier = lastFailed && {
@@ -299,18 +305,30 @@ function patch(pending: PendingInstall, changes: Partial<PendingInstall>): Pendi
 }
 
 /**
- * The attempt after a status answered while this page follows it:
- * confirmed or replaced as `trackInstall` decides. `reachable: false`
- * counts as an outage (the app restarts). A reachable status without the
- * unconfirmed attempt is remembered for its deadline, once the install
- * request's answer was unclear (`reason`): a status from before the updater
- * got the request tells nothing.
+ * The install request has answered, unclearly (`reason` is set). Only a
+ * status request sent after that can tell that the installation did not start.
  */
-export function observeStatus(pending: PendingInstall, data: UpdatesResponse, now: number): PendingInstall {
+export function installAnswered(pending: PendingInstall): boolean {
+  return pending.reason !== null;
+}
+
+/**
+ * The attempt after a status answered while this page follows it:
+ * confirmed or replaced as `trackInstall` decides (from any status).
+ * `reachable: false` counts as an outage (the app restarts). A reachable
+ * status without the unconfirmed attempt is remembered for its deadline
+ * only when its request was sent after the install request answered
+ * (`sentAfterAnswer`); an earlier status tells nothing.
+ */
+export function observeStatus(
+  pending: PendingInstall,
+  data: UpdatesResponse,
+  now: number,
+  sentAfterAnswer: boolean,
+): PendingInstall {
   const tracked = trackInstall(pending, data, now);
   if (!data.reachable) return patch(tracked, { outage: true, lastError: data.error ?? tracked.lastError });
-  if (!tracked.confirmed && tracked.reason !== null && data.updater)
-    return patch(tracked, { answered: true });
+  if (!tracked.confirmed && sentAfterAnswer && data.updater) return patch(tracked, { answered: true });
   return tracked;
 }
 

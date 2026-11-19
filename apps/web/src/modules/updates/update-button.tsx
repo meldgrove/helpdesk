@@ -13,7 +13,15 @@ import { errorMessage } from "@/lib/api";
 import { useAuthConfig } from "@/lib/auth-config";
 import { useFormatter } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { fetchUpdates, updatesKey, useCheckUpdates, useInstallUpdate, useUpdates } from "./api";
+import {
+  fetchUpdates,
+  isPageSignedOut,
+  markSignedOut,
+  updatesKey,
+  useCheckUpdates,
+  useInstallUpdate,
+  useUpdates,
+} from "./api";
 import { messages } from "./messages";
 import { DEPLOYMENT_GUIDE_URL } from "./updates-page";
 import {
@@ -24,6 +32,7 @@ import {
   hasPopover,
   ignoreInstall,
   installAction,
+  installAnswered,
   installOutcome,
   isIgnored,
   isOutage,
@@ -124,6 +133,14 @@ function useInstallWatch(onFailed: () => void) {
     const tick = async () => {
       const before = pendingRef.current;
       if (!before) return;
+      // The page is signed out (here or by another status request): no more requests, keep the attempt.
+      if (isPageSignedOut(client)) {
+        halt();
+        setRestarting(false);
+        return;
+      }
+      // Only a status requested after the install request answered can tell that it did not start.
+      const sentAfterAnswer = installAnswered(before);
       // Each request with a timeout; an unconfirmed attempt's at most until its deadline.
       const left = reconcileDeadline(before);
       const timeoutMs = Math.min(POLL_TIMEOUT_MS, left === null ? Infinity : Math.max(0, left - Date.now()));
@@ -138,8 +155,9 @@ function useInstallWatch(onFailed: () => void) {
         data = await fetchUpdates(controller.signal);
       } catch (error) {
         if (stopped) return;
-        // Signed out (also a sign-in page instead of the API): stop every request, keep the attempt.
+        // Signed out (also a sign-in page instead of the API): stop every request of the page, keep the attempt.
         if (isSignedOut(error)) {
+          markSignedOut(client);
           halt();
           setRestarting(false);
           return;
@@ -161,7 +179,7 @@ function useInstallWatch(onFailed: () => void) {
         client.setQueryData(updatesKey, data);
         // No updater while the app restarts is expected, too.
         setRestarting(!data.reachable);
-        const tracked = observeStatus(current, data, at);
+        const tracked = observeStatus(current, data, at, sentAfterAnswer);
         if (tracked !== current) {
           setPending(tracked);
           // Another installation: the effect starts again for it.

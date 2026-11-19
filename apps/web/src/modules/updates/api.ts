@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSyncExternalStore } from "react";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { UpdateChannel, UpdatesResponse } from "@helpdesk/shared/api/updates";
 import { ApiError, apiUrl, parse } from "@/lib/api";
 import { isSignedOut } from "./state";
@@ -41,6 +42,8 @@ async function send(
   try {
     data = await parse<unknown>(response);
   } catch (error) {
+    // Accepted; only reading the answer failed.
+    if (response.status === 202) return null;
     if (error instanceof ApiError && error.status === 409 && isUpdatesResponse(error.body)) return error.body;
     throw error;
   }
@@ -59,22 +62,54 @@ async function call(method: "GET" | "POST", path: string, body?: unknown, signal
 export const fetchUpdates = (signal?: AbortSignal) => call("GET", "/updates", undefined, signal);
 
 /**
+ * Pages (query clients) where a request of the updates routes found the
+ * session ended (401, 403 or a sign-in page): from then on no automatic
+ * status request, neither of the install watch nor of any status observer,
+ * also one that mounts later. A reload starts again.
+ */
+const signedOutPages = new WeakSet<QueryClient>();
+const signedOutListeners = new Set<() => void>();
+
+function subscribeSignedOut(listener: () => void) {
+  signedOutListeners.add(listener);
+  return () => void signedOutListeners.delete(listener);
+}
+
+export function markSignedOut(client: QueryClient) {
+  if (signedOutPages.has(client)) return;
+  signedOutPages.add(client);
+  for (const listener of signedOutListeners) listener();
+}
+
+export const isPageSignedOut = (client: QueryClient) => signedOutPages.has(client);
+
+/** Marks the page signed out when `error` says so; returns it. */
+function noteSignedOut(client: QueryClient, error: unknown) {
+  if (isSignedOut(error)) markSignedOut(client);
+  return error;
+}
+
+/**
  * The updater's status for superadmins: on page load, every 5 minutes and
  * when the window regains focus (at most once a minute). Never checks by
- * itself. `polling: false` while the button polls an installation. Once a
- * request found the session ended, no more automatic requests.
+ * itself. `polling: false` while the button polls an installation. Once the
+ * page is signed out, no more automatic requests.
  */
 export function useUpdates(options: { enabled?: boolean; polling?: boolean } = {}) {
-  const automatic = (query: { state: { error: unknown } }) =>
-    options.polling !== false && !isSignedOut(query.state.error);
+  const client = useQueryClient();
+  const signedOutPage = useSyncExternalStore(subscribeSignedOut, () => isPageSignedOut(client));
+  const automatic = options.polling !== false;
   return useQuery({
     queryKey: updatesKey,
-    queryFn: ({ signal }) => fetchUpdates(signal),
-    enabled: options.enabled ?? true,
+    queryFn: ({ signal }) =>
+      fetchUpdates(signal).catch((error: unknown) => {
+        throw noteSignedOut(client, error);
+      }),
+    enabled: (options.enabled ?? true) && !signedOutPage,
     staleTime: 60_000,
     refetchOnWindowFocus: automatic,
     refetchOnReconnect: automatic,
-    refetchInterval: (query) => (automatic(query) ? 5 * 60_000 : false),
+    refetchInterval: automatic ? 5 * 60_000 : false,
     retry: false,
   });
 }
@@ -86,6 +121,7 @@ function useUpdatesMutation<T, R extends UpdatesResponse | null>(request: (input
     onSuccess: (data) => {
       if (data) client.setQueryData(updatesKey, data);
     },
+    onError: (error) => noteSignedOut(client, error),
   });
 }
 

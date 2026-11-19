@@ -217,6 +217,22 @@ describe("buttonState", () => {
     });
   });
 
+  it("is failed while the failed version is still offered, even as attention beside a newer available", () => {
+    const attention = update({ version: "0.3.0" });
+    const last = {
+      version: "0.3.0",
+      result: "rolled-back",
+      message: "migrate failed. 0.2.0 runs again.",
+      finishedAt: "2026-11-19T08:00:00.000Z",
+    } as const;
+    expect(state(response(status({ available: update({ version: "0.2.2" }), attention, last })))).toEqual({
+      kind: "failed",
+      version: "0.3.0",
+      update: attention,
+      message: "migrate failed. 0.2.0 runs again.",
+    });
+  });
+
   it("uses the update's message when the last installation was another version", () => {
     const available = update({ version: "0.2.2", failed: "image not found" });
     const last = {
@@ -433,7 +449,8 @@ describe("installOutcome", () => {
     // The attempt started at 09:00:00.700; the updater writes 09:00:00.
     const attempt = { ...newAttempt("0.2.1", "0.2.0", NOW + 700), reason: "No answer within 10 seconds." };
     const accepted = response(status({ last: last("accepted", "2026-11-19T09:00:00Z") }), "0.2.1");
-    const tracked = observeStatus(attempt, accepted, NOW + 2_000);
+    // Also from a status requested before the install request answered.
+    const tracked = observeStatus(attempt, accepted, NOW + 2_000, false);
     expect(tracked.confirmed).toBe(true);
     expect(installOutcome(tracked, accepted)).toBe("done");
   });
@@ -443,7 +460,7 @@ describe("installOutcome", () => {
     const retry = newAttempt("0.2.1", "0.2.0", NOW + 400, earlier);
     const before = response(status({ available: update(), last: earlier }));
     expect(installOutcome(retry, before)).toBe("waiting");
-    expect(observeStatus(retry, before, NOW + 2_000).confirmed).toBe(false);
+    expect(observeStatus(retry, before, NOW + 2_000, true).confirmed).toBe(false);
     // The retry's own result, in the same second, counts.
     const installed = response(status({ last: last("installed", "2026-11-19T09:00:00Z") }));
     expect(installOutcome(retry, installed)).toBe("done");
@@ -489,7 +506,7 @@ describe("following an installation", () => {
     );
     expect(failed).toMatchObject({ outage: true, lastError: "Bad gateway", confirmed: false });
     expect(unconfirmedEnd(failed)).toEqual({ started: "unknown", detail: "Bad gateway" });
-    const unreachable = observeStatus(failed, { ...response(null), error: "No connection." }, NOW);
+    const unreachable = observeStatus(failed, { ...response(null), error: "No connection." }, NOW, true);
     expect(unconfirmedEnd(unreachable)).toEqual({ started: "unknown", detail: "No connection." });
   });
 
@@ -498,11 +515,17 @@ describe("following an installation", () => {
       { ...attempt, reason: "No answer within 10 seconds." },
       new TypeError("Failed to fetch"),
     );
-    const answered = observeStatus(unclear, response(status({ available: update() })), NOW + 4_000);
+    const answered = observeStatus(unclear, response(status({ available: update() })), NOW + 4_000, true);
     expect(answered).toMatchObject({ confirmed: false, answered: true });
     expect(unconfirmedEnd(answered)).toEqual({ started: "no", detail: "No answer within 10 seconds." });
-    // A status before the install request's answer tells nothing.
-    expect(observeStatus(attempt, response(status()), NOW + 1_000).answered).toBe(false);
+    // A status requested before the install request answered tells nothing, even when it arrives after.
+    const early = observeStatus(unclear, response(status()), NOW + 1_000, false);
+    expect(early.answered).toBe(false);
+    expect(unconfirmedEnd(early).started).toBe("unknown");
+    // But it still confirms the attempt when it reports it.
+    expect(observeStatus(unclear, response(status({ installing: installing() })), NOW, false).confirmed).toBe(
+      true,
+    );
     // A later failed request does not change that.
     expect(unconfirmedEnd(observeError(answered, new TypeError("Failed to fetch"))).started).toBe("no");
   });
@@ -515,11 +538,12 @@ describe("following an installation", () => {
       followed,
       { ...response(null, null), error: "No connection." },
       NOW + 2_000,
+      true,
     );
     expect(restarted).toMatchObject({ outage: true, lastError: "No connection." });
-    expect(installOutcome(observeStatus(restarted, accepted, NOW + 4_000), accepted)).toBe("done");
+    expect(installOutcome(observeStatus(restarted, accepted, NOW + 4_000, true), accepted)).toBe("done");
     // An unchanged attempt stays the same object.
-    expect(observeStatus(restarted, { ...response(null, null), error: "No connection." }, NOW)).toBe(
+    expect(observeStatus(restarted, { ...response(null, null), error: "No connection." }, NOW, true)).toBe(
       restarted,
     );
   });

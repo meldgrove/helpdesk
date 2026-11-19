@@ -1,6 +1,6 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
-import { focusManager, onlineManager } from "@tanstack/react-query";
+import { focusManager, onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { UpdatesResponse, UpdaterStatus } from "@helpdesk/shared/api/updates";
@@ -48,11 +48,12 @@ const answer = (updater: UpdaterStatus | null, error: string | null = null): Upd
 });
 
 type Reply = { status?: number; body?: unknown; text?: string; contentType?: string };
-type Route = (method: string, path: string, body: unknown) => Reply | Error | Promise<never> | undefined;
+type Answer = Reply | Response | Error | undefined;
+type Route = (method: string, path: string, body: unknown) => Answer | Promise<Answer>;
 
 /**
- * Stubs fetch by route (an Error: no answer; a promise: an answer that never
- * comes); /auth-config is answered for every test.
+ * Stubs fetch by route (an Error: no answer; a promise: an answer that comes
+ * later or never; a Response: as it is); /auth-config is answered for every test.
  */
 function routeFetch(route: Route) {
   const mock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -67,6 +68,7 @@ function routeFetch(route: Route) {
             body: { error: { code: "not_found", message: "Not found" } },
           });
     if (reply instanceof Error) throw reply;
+    if (reply instanceof Response) return reply;
     return new Response(reply.text ?? JSON.stringify(reply.body), {
       status: reply.status ?? 200,
       headers: { "content-type": reply.contentType ?? "application/json" },
@@ -369,6 +371,24 @@ describe("UpdateButton", () => {
     expect(stored()).toMatchObject({ version: "0.2.1", confirmed: true });
   });
 
+  it("follows an installation the updater accepted, also when reading its answer fails", async () => {
+    routeFetch((method, path) => {
+      if (path === "/updates") return { body: answer(status()) };
+      if (path === "/updates/install") {
+        const broken = new ReadableStream({
+          start: (stream) => stream.error(new TypeError("Connection lost")),
+        });
+        return new Response(broken, { status: 202, headers: { "content-type": "application/json" } });
+      }
+    });
+    renderButton();
+
+    await confirmInstall("Update available · 0.2.1", "Install now");
+
+    expect(await screen.findByRole("button", { name: "Installing 0.2.1…" })).toBeInTheDocument();
+    expect(stored()).toMatchObject({ version: "0.2.1", confirmed: true });
+  });
+
   describe("an attempt without a clear answer", () => {
     /** The install request gets no answer; from then on, status requests get `poll`. */
     function unclearInstall(poll: Route) {
@@ -398,6 +418,42 @@ describe("UpdateButton", () => {
       expect(error).toHaveBeenCalledWith("The installation could not be confirmed: Network is down");
       expect(stored()).toBeNull();
       expect(await screen.findByRole("button", { name: "Update available · 0.2.1" })).toBeInTheDocument();
+    });
+
+    it("takes no status requested before the install request answered as proof that it did not start", async () => {
+      const user = fakeClock();
+      const error = vi.spyOn(toast, "error");
+      let gets = 0;
+      let answerInstall: (() => void) | undefined;
+      let deliverEarly: ((reply: Reply) => void) | undefined;
+      routeFetch((method, path) => {
+        if (method === "POST" && path === "/updates/install") {
+          // Answers (without a clear answer) only once the first status poll is under way.
+          return new Promise<Answer>((resolve) => {
+            answerInstall = () => resolve(new TypeError("Failed to fetch"));
+            if (gets >= 2) answerInstall();
+          });
+        }
+        if (path !== "/updates") return;
+        gets += 1;
+        if (gets === 1) return { body: answer(status()) }; // the page load
+        if (gets === 2) {
+          // Requested before the install request answered; its answer arrives afterwards.
+          answerInstall?.();
+          return new Promise<Answer>((resolve) => (deliverEarly = resolve));
+        }
+        return new TypeError("Network is down");
+      });
+      renderButton();
+
+      await confirmInstall("Update available · 0.2.1", "Install now", user);
+      await waitFor(() => expect(stored()).toMatchObject({ confirmed: false, reason: "Failed to fetch" }));
+      await act(async () => deliverEarly!({ body: answer(status()) }));
+      await act(() => vi.advanceTimersByTimeAsync(4_000));
+      expect(stored()).toMatchObject({ confirmed: false, answered: false });
+      await act(() => vi.advanceTimersByTimeAsync(60_000));
+
+      expect(error).toHaveBeenCalledWith("The installation could not be confirmed: Network is down");
     });
 
     it("ends after 60 s also while a status request never returns", async () => {
@@ -471,6 +527,50 @@ describe("UpdateButton", () => {
     await act(() => vi.advanceTimersByTimeAsync(10_000));
 
     expect(calls(fetch)).toEqual(["GET /api/v1/updates"]);
+    act(() => focusManager.setFocused(undefined));
+  });
+
+  it("stops every status observer of the page, also later ones, once the install watch finds a sign-in page", async () => {
+    fakeClock();
+    storeAttempt();
+    let signedIn = true;
+    const fetch = routeFetch((method, path) => {
+      if (path !== "/updates") return;
+      return signedIn
+        ? { body: answer(status()) }
+        : { text: "<!doctype html><title>Sign in</title>", contentType: "text/html" };
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const page = (later: boolean) => (
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <UpdateButton />
+          <UpdatesPage />
+          {later ? <UpdatesPage /> : null}
+        </TooltipProvider>
+      </QueryClientProvider>
+    );
+    const view = render(page(false));
+
+    expect(await screen.findByRole("button", { name: "Installing 0.2.1…" })).toBeInTheDocument();
+    signedIn = false;
+    // The install watch's next poll finds the sign-in page.
+    await act(() => vi.advanceTimersByTimeAsync(2_500));
+    const requests = calls(fetch).length;
+    await act(() => vi.advanceTimersByTimeAsync(10 * 60_000));
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+      onlineManager.setOnline(false);
+      onlineManager.setOnline(true);
+    });
+    view.rerender(page(true));
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+
+    expect(calls(fetch)).toHaveLength(requests);
+    expect(stored()).toMatchObject({ version: "0.2.1" });
     act(() => focusManager.setFocused(undefined));
   });
 
