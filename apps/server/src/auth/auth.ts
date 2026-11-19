@@ -25,6 +25,10 @@ function createAuth() {
     basePath: "/api/auth",
     secret: settings.AUTH_SECRET,
     trustedOrigins: [settings.APP_URL],
+    // Auth library diagnostics can contain provider responses and query values.
+    logger: {
+      log: (level) => logger[level]("authentication library reported a problem"),
+    },
     database: drizzleAdapter(getDb(), {
       provider: "pg",
       schema: {

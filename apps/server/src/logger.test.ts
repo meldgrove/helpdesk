@@ -1,3 +1,4 @@
+import pg from "pg";
 import { DrizzleQueryError } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { serializeError } from "./logger";
@@ -21,6 +22,16 @@ describe("serializeError", () => {
     const logged = serializeError(new DrizzleQueryError("select $1", [question], new Error("failed")));
 
     expect(JSON.stringify(logged)).not.toMatch(/my desk|reset my password/);
+  });
+
+  it("keeps row data out of unwrapped PostgreSQL errors", () => {
+    const error = Object.assign(new pg.DatabaseError("invalid value: private input", 0, "error"), {
+      code: "22P02",
+      detail: "Row contains private input",
+    });
+    const logged = serializeError(error);
+    expect(JSON.stringify(logged)).not.toContain("private input");
+    expect(logged).toMatchObject({ type: "DatabaseError", code: "22P02" });
   });
 
   it("logs other errors as before", () => {
