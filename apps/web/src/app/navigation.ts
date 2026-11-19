@@ -5,6 +5,7 @@ import {
   KanbanSquare,
   List,
   Plug,
+  RefreshCw,
   ScrollText,
   SquarePen,
   UsersRound,
@@ -25,6 +26,7 @@ export const navMessages = defineMessages({
     people: "People",
     integrations: "Email & Slack",
     audit: "Audit log",
+    updates: "Updates",
   },
 });
 
@@ -58,6 +60,7 @@ export const NAVIGATION: NavGroup[] = [
       { key: "people", to: "/admin/people", icon: UsersRound },
       { key: "integrations", to: "/admin/integrations", icon: Plug, role: "superadmin" },
       { key: "audit", to: "/admin/audit", icon: ScrollText, role: "superadmin" },
+      { key: "updates", to: "/admin/updates", icon: RefreshCw, role: "superadmin" },
     ],
   },
 ];

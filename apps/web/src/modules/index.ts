@@ -7,6 +7,7 @@ import { routes as people } from "./people/routes";
 import { routes as profile } from "./profile/routes";
 import { routes as requests } from "./requests/routes";
 import { routes as tickets } from "./tickets/routes";
+import { routes as updates } from "./updates/routes";
 
 /** Routes of every module inside the signed-in app. Add new modules here. */
 export const appRoutes: AnyRoute[] = [
@@ -17,5 +18,6 @@ export const appRoutes: AnyRoute[] = [
   ...people,
   ...integrations,
   ...audit,
+  ...updates,
   ...profile,
 ];

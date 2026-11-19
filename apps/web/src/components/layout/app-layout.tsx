@@ -34,7 +34,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useMe } from "@/hooks/use-me";
+import { useHasRole, useMe } from "@/hooks/use-me";
 import { THEMES, useTheme, type Theme } from "@/lib/theme";
 import { authClient } from "@/lib/auth-client";
 import { useAuthConfig } from "@/lib/auth-config";
@@ -42,6 +42,7 @@ import { queryClient } from "@/lib/query";
 import { defineMessages, useT } from "@/i18n";
 import { NAVIGATION, navMessages } from "@/app/navigation";
 import { useRoleLabel } from "@/lib/labels";
+import { UpdateButton } from "@/modules/updates/update-button";
 
 const messages = defineMessages({
   en: {
@@ -194,6 +195,7 @@ function AppSidebar({ appName }: { appName: string }) {
 /** The signed-in application frame: sidebar, header and the page. */
 export function AppLayout() {
   const m = useT(messages);
+  const superadmin = useHasRole("superadmin");
   const appName = useAuthConfig()?.appName || DEFAULT_APP_NAME;
   useEffect(() => {
     document.title = appName;
@@ -213,7 +215,12 @@ export function AppLayout() {
           <header className="bg-background/95 sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b px-4 backdrop-blur">
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mr-2 h-4" />
-            <span className="truncate text-sm font-medium">{appName}</span>
+            <span className="min-w-0 truncate text-sm font-medium">{appName}</span>
+            {superadmin ? (
+              <div className="ml-auto flex shrink-0 items-center">
+                <UpdateButton />
+              </div>
+            ) : null}
           </header>
           <main id="main" className="flex-1">
             <Outlet />
