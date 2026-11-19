@@ -12,7 +12,7 @@ export type UpdaterResult =
   | { kind: "refused"; httpStatus: number; error: string }
   | { kind: "unreachable"; error: string };
 
-/** How long each call may take (Meldgrove docs/updates.md, "Routes"). */
+/** How long each call may take; the updater checks for up to 30 s. */
 export const UPDATER_TIMEOUTS = { status: 3_000, check: 35_000, install: 10_000, channel: 35_000 };
 
 export type UpdaterClient = {

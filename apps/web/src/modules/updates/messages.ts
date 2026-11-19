@@ -1,6 +1,6 @@
 import { defineMessages } from "@/i18n";
 
-/** Texts of the update button and the Updates page (Meldgrove docs/updates.md). */
+/** Texts of the update button and the Updates page. */
 export const messages = defineMessages({
   en: {
     title: "Updates",

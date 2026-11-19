@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * In-app updates: the app's four routes in front of the Meldgrove Updater
- * (Meldgrove docs/updates.md, "App integration"). Superadmins only.
+ * (https://github.com/meldgrove/updater#the-apps-update-button). Superadmins only.
  */
 
 /** A release (0.2.1), a preview (0.2.1-preview.3), or an image without a version (sha256:<12 hex>). */

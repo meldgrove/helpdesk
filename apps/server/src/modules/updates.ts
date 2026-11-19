@@ -14,7 +14,8 @@ import { createUpdaterClient, type UpdaterClient, type UpdaterResult } from "../
 
 /**
  * In-app updates for superadmins: the Meldgrove Updater's status, a check,
- * an installation and the channel (Meldgrove docs/updates.md). Every route
+ * an installation and the channel
+ * (https://github.com/meldgrove/updater#the-apps-update-button). Every route
  * answers with `UpdatesResponse`: an updater error answer becomes 409 with
  * `error` and the latest status; no answer from UPDATER_URL (or an empty
  * UPDATER_URL) is 200 with `reachable: false`.

@@ -2,8 +2,9 @@ import type { Update, UpdatesResponse, UpdaterStatus } from "@helpdesk/shared/ap
 import { ApiError } from "@/lib/api";
 
 /**
- * What the update button shows (Meldgrove docs/updates.md, "Button"), derived
- * from the latest `GET /updates` answer and what this page is doing.
+ * What the update button shows, derived from the latest `GET /updates` answer
+ * (https://github.com/meldgrove/updater#the-apps-update-button) and what this
+ * page is doing.
  */
 export type ButtonState =
   | { kind: "checking" }
