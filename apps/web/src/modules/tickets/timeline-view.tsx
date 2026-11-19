@@ -12,11 +12,11 @@ import {
 } from "lucide-react";
 import type { Message, TicketEvent } from "@helpdesk/shared/api/tickets";
 import { AttachmentList } from "@/components/attachments";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@meldgrove/ui/badge";
 import { useT } from "@/i18n";
 import { useFormatter } from "@/lib/format";
 import { useStatusLabel, useUrgencyLabel } from "@/lib/labels";
-import { cn } from "@/lib/utils";
+import { cn } from "@meldgrove/ui/utils";
 import { PersonAvatar, RelativeTime } from "./bits";
 import { messages } from "./messages";
 import { describeEvent, mergeTimeline, personName, type EventWords } from "./timeline";

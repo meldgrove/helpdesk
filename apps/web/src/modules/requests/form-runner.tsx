@@ -12,11 +12,11 @@ import {
   type Question,
   type VisiblePage,
 } from "@helpdesk/shared/form";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FieldGroup } from "@/components/ui/field";
-import { Spinner } from "@/components/ui/spinner";
+import { Alert, AlertDescription } from "@meldgrove/ui/alert";
+import { Button } from "@meldgrove/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@meldgrove/ui/card";
+import { FieldGroup } from "@meldgrove/ui/field";
+import { Spinner } from "@meldgrove/ui/spinner";
 import { ApiError, api, errorMessage } from "@/lib/api";
 import { LocaleContext, useT } from "@/i18n";
 import { formMessages, issueMessages } from "./messages";

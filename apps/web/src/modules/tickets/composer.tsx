@@ -4,13 +4,13 @@ import { Lock, MessageSquareReply, Send } from "lucide-react";
 import { z } from "zod";
 import { attachmentSchema, type Attachment } from "@helpdesk/shared/api/tickets";
 import { AttachmentPicker } from "@/components/attachments";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@meldgrove/ui/button";
+import { Spinner } from "@meldgrove/ui/spinner";
+import { Tabs, TabsList, TabsTrigger } from "@meldgrove/ui/tabs";
+import { Textarea } from "@meldgrove/ui/textarea";
 import { useT } from "@/i18n";
 import { errorMessage } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn } from "@meldgrove/ui/utils";
 import { useSendMessage } from "./api";
 import { messages } from "./messages";
 

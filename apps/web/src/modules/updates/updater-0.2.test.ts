@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { buttonState, failureOf, parseUpdatesResponse } from "@meldgrove/ui/updates/core";
 import { updaterStatusSchema, type UpdatesResponse } from "@helpdesk/shared/api/updates";
-import { buttonState } from "./state";
 
 /** Answers captured from Updater 0.2 (against GHCR and GitHub), shared with the server's tests. */
 const samples = import.meta.glob<unknown>("../../../../server/src/test/fixtures/updater-0.2/*.json", {
@@ -15,64 +15,52 @@ function sample(name: string): UpdatesResponse {
   return { app: { version: updater.installed }, reachable: true, updater, error: null };
 }
 
-function stateOf(name: string) {
-  return buttonState({
-    data: sample(name),
-    loadFailed: false,
-    checking: false,
-    pending: null,
-    restarting: false,
-    now: Date.parse("2026-11-19T04:00:00Z"),
-  });
-}
+const stateOf = (name: string) => buttonState(sample(name), { checking: false, pending: null });
 
-describe("the button with the real answers of Updater 0.2", () => {
-  it("parses every sample", () => {
+describe("the button (@meldgrove/ui) with the real answers of Updater 0.2", () => {
+  it("parses every sample, with the app's schema and the button's", () => {
     expect(Object.keys(samples).length).toBeGreaterThanOrEqual(7);
-    for (const raw of Object.values(samples)) expect(updaterStatusSchema.safeParse(raw).success).toBe(true);
+    for (const raw of Object.values(samples)) {
+      const updater = updaterStatusSchema.parse(raw);
+      const response = { app: { version: updater.installed }, reachable: true, updater, error: null };
+      expect(parseUpdatesResponse(response)).not.toBeNull();
+    }
   });
 
   it("shows the update in mode off too (the popover installs nothing there)", () => {
-    expect(stateOf("status-off-available-attention")).toMatchObject({
-      kind: "available",
-      update: { version: "0.2.1" },
-    });
+    expect(stateOf("status-off-available-attention")).toBe("available");
+    expect(sample("status-off-available-attention").updater?.available?.version).toBe("0.2.1");
   });
 
   it("offers the update a server installs", () => {
-    expect(stateOf("status-host-available")).toMatchObject({
-      kind: "available",
-      update: { version: "0.1.3", installsAt: "2026-11-21T18:21:25Z" },
+    expect(stateOf("status-host-available")).toBe("available");
+    expect(sample("status-host-available").updater?.available).toMatchObject({
+      version: "0.1.3",
+      installsAt: "2026-11-21T18:21:25Z",
     });
   });
 
   it("is up to date when the platform decides and offers nothing", () => {
-    expect(stateOf("status-platform-locked")).toEqual({
-      kind: "up-to-date",
-      installed: "0.1.2",
-      error: null,
-    });
+    expect(stateOf("status-platform-locked")).toBe("current");
   });
 
   it("shows a running installation and its stage", () => {
-    expect(stateOf("status-installing")).toMatchObject({
-      kind: "installing",
+    expect(stateOf("status-installing")).toBe("installing");
+    expect(sample("status-installing").updater?.installing).toMatchObject({
       version: "0.1.3",
       stage: "pulling",
     });
-    expect(stateOf("install-202")).toMatchObject({
-      kind: "installing",
-      version: "0.1.3",
-      stage: "requested",
-    });
+    expect(stateOf("install-202")).toBe("installing");
+    expect(sample("install-202").updater?.installing).toMatchObject({ version: "0.1.3", stage: "requested" });
   });
 
   it("shows a rolled-back installation as failed, also after switching to Preview", () => {
     for (const name of ["status-failed", "status-preview"]) {
-      expect(stateOf(name)).toMatchObject({
-        kind: "failed",
-        update: { version: "0.1.3" },
+      expect(stateOf(name)).toBe("failed");
+      expect(failureOf(sample(name))).toMatchObject({
+        version: "0.1.3",
         message: "container library-web-1 is unhealthy",
+        offer: { version: "0.1.3" },
       });
     }
   });

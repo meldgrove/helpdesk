@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import type { FormDefinition, Operator, QuestionType } from "@helpdesk/shared/form";
 import { useT } from "@/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@meldgrove/ui/utils";
 import { classifyProblem, type Reference } from "./editor-state";
 import { messages } from "./messages";
 

@@ -1,17 +1,17 @@
 import { useRef } from "react";
 import { ArrowDown, ArrowUp, Info, Plus, Trash2 } from "lucide-react";
 import { QUESTION_TYPES, type Page } from "@helpdesk/shared/form";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Button } from "@meldgrove/ui/button";
+import { Card } from "@meldgrove/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+} from "@meldgrove/ui/dropdown-menu";
+import { Field, FieldLabel } from "@meldgrove/ui/field";
+import { Input } from "@meldgrove/ui/input";
+import { Textarea } from "@meldgrove/ui/textarea";
 import { useT } from "@/i18n";
 import { common } from "@/i18n/common";
 import { ConditionEditor } from "./condition-editor";

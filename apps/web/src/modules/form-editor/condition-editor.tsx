@@ -10,10 +10,10 @@ import {
   type Rule,
 } from "@helpdesk/shared/form";
 import { URGENCIES, type Urgency } from "@helpdesk/shared/tickets";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Button } from "@meldgrove/ui/button";
+import { Input } from "@meldgrove/ui/input";
+import { Label } from "@meldgrove/ui/label";
+import { RadioGroup, RadioGroupItem } from "@meldgrove/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -22,7 +22,7 @@ import {
   SelectLabel,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@meldgrove/ui/select";
 import { useT } from "@/i18n";
 import { useUrgencyLabel } from "@/lib/labels";
 import {

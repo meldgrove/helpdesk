@@ -8,12 +8,12 @@ import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@helpdesk/shared/tickets";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@meldgrove/ui/button";
+import { Spinner } from "@meldgrove/ui/spinner";
 import { api, errorMessage } from "@/lib/api";
 import { useFormatter } from "@/lib/format";
 import { defineMessages, useT } from "@/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@meldgrove/ui/utils";
 
 const messages = defineMessages({
   en: {

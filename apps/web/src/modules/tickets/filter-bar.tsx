@@ -4,7 +4,7 @@ import { Check, ChevronsUpDown, Search, UserRound, X } from "lucide-react";
 import { URGENCIES, type Urgency } from "@helpdesk/shared/tickets";
 import { peopleQuery } from "@/components/person-picker";
 import { UrgencyBadge } from "@/components/ticket-badges";
-import { Button } from "@/components/ui/button";
+import { Button } from "@meldgrove/ui/button";
 import {
   Command,
   CommandEmpty,
@@ -13,14 +13,14 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
-} from "@/components/ui/command";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+} from "@meldgrove/ui/command";
+import { Input } from "@meldgrove/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@meldgrove/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@meldgrove/ui/select";
 import { useDebounced } from "@/hooks/use-debounced";
 import { useT } from "@/i18n";
 import { useUrgencyLabel } from "@/lib/labels";
-import { cn } from "@/lib/utils";
+import { cn } from "@meldgrove/ui/utils";
 import { categoriesQuery } from "./api";
 import { hasFilters, type TicketFilters } from "./filters";
 import { messages } from "./messages";

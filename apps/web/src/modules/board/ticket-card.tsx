@@ -4,17 +4,17 @@ import { CalendarDays, MessageSquare, MoreHorizontal, UserCheck } from "lucide-r
 import type { TicketSummary } from "@helpdesk/shared/api/tickets";
 import { STATUSES, type Status } from "@helpdesk/shared/tickets";
 import { UrgencyBadge } from "@/components/ticket-badges";
-import { Button } from "@/components/ui/button";
+import { Button } from "@meldgrove/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@meldgrove/ui/dropdown-menu";
 import { INTL_LOCALE, useLocale, useT } from "@/i18n";
 import { useStatusLabel } from "@/lib/labels";
-import { cn } from "@/lib/utils";
+import { cn } from "@meldgrove/ui/utils";
 import { PersonAvatar, StatusDot } from "@/modules/tickets/bits";
 import { isOverdue } from "@/modules/tickets/display";
 import { personName } from "@/modules/tickets/timeline";

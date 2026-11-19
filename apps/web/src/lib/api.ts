@@ -36,6 +36,11 @@ export function setUnauthorizedHandler(handler: () => void) {
   onUnauthorized = handler;
 }
 
+/** A request outside `api` found the session ended: the same handling as a 401. */
+export function sessionEnded() {
+  onUnauthorized?.();
+}
+
 /** Reads an API answer: its JSON, or the `ApiError` of an error status. */
 export async function parse<T>(response: Response): Promise<T> {
   if (response.status === 204) return undefined as T;
@@ -49,7 +54,7 @@ export async function parse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const body = data as Partial<ErrorBody> | { error?: unknown } | null;
     const error = body?.error;
-    if (response.status === 401) onUnauthorized?.();
+    if (response.status === 401) sessionEnded();
     // Most errors are `{ error: { code, message } }`; the updates routes answer `{ error: "…", … }`.
     if (typeof error === "string") {
       throw new ApiError(response.status, "conflict", error, undefined, data);
