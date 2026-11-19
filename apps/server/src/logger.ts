@@ -1,4 +1,5 @@
 import { pino, stdSerializers } from "pino";
+import pg from "pg";
 
 type FailedQuery = Error & { query: string; params: unknown[] };
 
@@ -12,19 +13,20 @@ const isFailedQuery = (error: unknown): error is FailedQuery =>
   Array.isArray((error as Partial<FailedQuery>).params);
 
 /**
- * A failed database query quotes its values, such as message texts, in its
- * message, stack and `params`. Its log entry keeps the query (placeholders
- * only), the database's error code and the code location.
+ * PostgreSQL errors can quote row data, even without a Drizzle wrapper.
+ * Keep the database error code, code location and parameterized query.
  */
 export function serializeError(error: unknown) {
-  if (!isFailedQuery(error)) return stdSerializers.err(error as Error);
-  const code = (error.cause as { code?: unknown } | undefined)?.code;
+  const failedQuery = isFailedQuery(error);
+  if (!failedQuery && !(error instanceof pg.DatabaseError)) return stdSerializers.err(error as Error);
+  const cause = failedQuery ? error.cause : error;
+  const code = (cause as { code?: unknown } | undefined)?.code;
   // The stack starts with the message; only the frames after it stay.
   const stack = error.stack ?? "";
   const start = stack.indexOf(error.message);
   return {
     type: error.constructor.name,
-    query: error.query,
+    query: failedQuery ? error.query : undefined,
     code: typeof code === "string" ? code : undefined,
     stack: start === -1 ? undefined : stack.slice(start + error.message.length).replace(/^\n/, ""),
   };

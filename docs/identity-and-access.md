@@ -30,7 +30,8 @@ Register a client at the provider with this redirect URL:
 ```
 
 and set `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The
-provider must return the email address (scopes `openid email profile`). Its
+provider must return an ID token and the email address (scopes `openid email
+profile`). Helpdesk keeps the account tied to the same provider subject. Its
 discovery document must include `issuer` and `jwks_uri` so the app can verify
 ID tokens.
 
@@ -66,9 +67,11 @@ the role they had.
 
 The app reads the groups claim of each sign-in (`OIDC_GROUPS_CLAIM`, default
 `groups`), from the ID token or, when it is not there, from the userinfo
-endpoint. People appear in the app, and can be assigned, after their first
-sign-in; a changed group takes effect at their next sign-in (sessions last a
-week).
+endpoint. UserInfo must identify the same person as the ID token. If the
+app cannot verify the groups from UserInfo, it refuses the new sign-in.
+People appear in the app, and can be assigned, after their first
+sign-in. A changed group takes effect at the next sign-in, which the app
+requires after at most a week.
 
 Set the `GROUP_*` variables to the values the claim holds:
 

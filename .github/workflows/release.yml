@@ -21,19 +21,13 @@ on:
         description: "Dry run: build, show the version and notes, publish nothing"
         type: boolean
         default: false
-  pull_request:
-    paths:
-      - Dockerfile
-      - .dockerignore
-      - docker-entrypoint.sh
-      - .github/workflows/release.yml
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('release-pr-{0}', github.ref) || 'release' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:

@@ -1,4 +1,5 @@
-import { betterAuth } from "better-auth";
+import { APIError, betterAuth } from "better-auth";
+import { createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { genericOAuth } from "better-auth/plugins";
 import { eq, sql } from "drizzle-orm";
@@ -7,7 +8,9 @@ import { getDb } from "../db/client";
 import { accounts, authRateLimits, sessions, users, verifications } from "../db/schema";
 import { CLIENT_IP_HEADER } from "../http/client-ip";
 import { logger } from "../logger";
-import { refreshAccessAtSignIn } from "../directory/sign-in";
+import { refreshAccessAtSignIn, type SignInTokens } from "../directory/sign-in";
+
+export const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
 
 /**
  * Sign-in only through the OpenID Connect provider. Anyone the provider
@@ -17,12 +20,29 @@ import { refreshAccessAtSignIn } from "../directory/sign-in";
 function createAuth() {
   const settings = config();
   const appUrl = new URL(settings.APP_URL);
+  const callbackTokens = new WeakMap<Request, SignInTokens>();
+  const rememberTokens = async (tokens: SignInTokens, context: { request?: Request } | null) => {
+    const request = context?.request;
+    if (!request || new URL(request.url).pathname !== "/api/auth/callback/oidc" || !tokens.idToken) {
+      return false;
+    }
+    callbackTokens.set(request, tokens);
+  };
   return betterAuth({
     appName: settings.APP_NAME,
     baseURL: settings.APP_URL,
     basePath: "/api/auth",
     secret: settings.AUTH_SECRET,
     trustedOrigins: [settings.APP_URL],
+    onAPIError: {
+      // Let the app handle unexpected failures before the router can log them.
+      throw: true,
+      errorURL: new URL("/sign-in", appUrl).toString(),
+    },
+    // Auth library diagnostics can contain provider responses and query values.
+    logger: {
+      log: (level) => logger[level]("authentication library reported a problem"),
+    },
     database: drizzleAdapter(getDb(), {
       provider: "pg",
       schema: {
@@ -40,10 +60,34 @@ function createAuth() {
       ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
     },
     emailAndPassword: { enabled: false },
+    hooks: {
+      before: createAuthMiddleware(async (context) => {
+        if (context.path === "/sign-in/social" && context.body?.idToken) {
+          throw new APIError("BAD_REQUEST", { message: "Sign in through the OpenID Connect provider" });
+        }
+      }),
+    },
+    user: {
+      validateUserInfo: async ({ user, source }) => {
+        if (source.action === "create-user" || !user.id) return;
+        const subject = source.oauth?.profile?.sub;
+        if (typeof subject !== "string" || !subject) return { error: "oidc_subject_required" };
+        const [existing] = await getDb()
+          .select({ directoryId: users.directoryId })
+          .from(users)
+          .where(eq(users.id, user.id));
+        // Better Auth calls this before writing the account link or profile.
+        if (existing?.directoryId && existing.directoryId !== subject) {
+          return { error: "oidc_subject_mismatch" };
+        }
+      },
+    },
     session: {
-      expiresIn: 60 * 60 * 24 * 7,
+      expiresIn: SESSION_LIFETIME_SECONDS,
+      // Claim-based roles can only be refreshed by signing in again.
+      disableSessionRefresh: settings.DIRECTORY === "oidc",
       updateAge: 60 * 60 * 24,
-      // Short cache: losing access takes effect within a minute.
+      // Protected routes check the current session and role in the database.
       cookieCache: { enabled: true, maxAge: 60 },
     },
     account: {
@@ -88,11 +132,19 @@ function createAuth() {
       }),
     ],
     databaseHooks: {
+      account: {
+        // The before hooks see the current exchange, even when the database
+        // keeps a token omitted from the new exchange.
+        create: { before: rememberTokens },
+        update: { before: rememberTokens },
+      },
       session: {
         create: {
           // Roles follow the groups at every sign-in; no role, no session.
-          before: async (session) => {
-            const role = await refreshAccessAtSignIn(session.userId);
+          before: async (session, context) => {
+            const tokens = context?.request && callbackTokens.get(context.request);
+            if (!tokens) return false;
+            const role = await refreshAccessAtSignIn(session.userId, tokens);
             if (!role) return false;
             return { data: session };
           },

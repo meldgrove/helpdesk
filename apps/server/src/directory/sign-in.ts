@@ -1,12 +1,14 @@
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, or, sql, TransactionRollbackError } from "drizzle-orm";
 import { roleSchema, type Role } from "@helpdesk/shared/roles";
 import { config } from "../config";
 import { getDb } from "../db/client";
-import { accounts, users } from "../db/schema";
+import { users } from "../db/schema";
 import { logger } from "../logger";
 import { isEnvironmentSuperadmin } from "../auth/bootstrap";
 import { claimGroups, roleFromGroups } from "./groups";
 import { createKeycloakClient, DirectoryError, type KeycloakClient } from "./keycloak";
+
+export type SignInTokens = { idToken?: string | null; accessToken?: string | null };
 
 let keycloak: KeycloakClient | undefined;
 const keycloakClient = () => (keycloak ??= createKeycloakClient());
@@ -42,13 +44,20 @@ export function readClaim(claims: Record<string, unknown> | null, name: string):
 
 let userInfoEndpoint: string | null | undefined;
 
-async function userInfoClaims(accessToken: string): Promise<Record<string, unknown> | null> {
+async function userInfoClaims(accessToken: string, subject: string): Promise<Record<string, unknown> | null> {
   if (userInfoEndpoint === undefined) {
-    const discovery = await fetch(
-      `${config().OIDC_ISSUER.replace(/\/+$/, "")}/.well-known/openid-configuration`,
-      { signal: AbortSignal.timeout(10_000) },
-    );
-    const body = (await discovery.json().catch(() => null)) as { userinfo_endpoint?: unknown } | null;
+    const issuer = config().OIDC_ISSUER.replace(/\/+$/, "");
+    const discovery = await fetch(`${issuer}/.well-known/openid-configuration`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!discovery.ok) throw new DirectoryError("Could not read the provider's discovery document");
+    const body = (await discovery.json().catch(() => null)) as {
+      issuer?: unknown;
+      userinfo_endpoint?: unknown;
+    } | null;
+    if (body?.issuer !== issuer && body?.issuer !== config().OIDC_ISSUER) {
+      throw new DirectoryError("The discovery document has a different issuer");
+    }
     userInfoEndpoint = typeof body?.userinfo_endpoint === "string" ? body.userinfo_endpoint : null;
   }
   if (!userInfoEndpoint) return null;
@@ -58,75 +67,96 @@ async function userInfoClaims(accessToken: string): Promise<Record<string, unkno
   });
   if (!response.ok)
     throw new DirectoryError(`The provider's userinfo endpoint answered HTTP ${response.status}`);
-  return (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  const claims = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  // OIDC requires UserInfo to refer to the subject of the verified ID token.
+  if (claims?.sub !== subject) throw new DirectoryError("UserInfo does not match the signed-in identity");
+  return claims;
 }
 
 /** The groups of the sign-in: the claim in the ID token, else in the userinfo response. */
-async function signInGroups(account: {
-  idToken: string | null;
-  accessToken: string | null;
-}): Promise<string[]> {
+async function signInGroups(
+  claims: Record<string, unknown>,
+  subject: string,
+  accessToken: SignInTokens["accessToken"],
+): Promise<string[]> {
   const claim = config().OIDC_GROUPS_CLAIM;
-  const fromIdToken = readClaim(jwtClaims(account.idToken), claim);
+  const fromIdToken = readClaim(claims, claim);
   if (fromIdToken !== undefined) return claimGroups(fromIdToken);
-  if (!account.accessToken) return [];
-  return claimGroups(readClaim(await userInfoClaims(account.accessToken), claim));
+  if (!accessToken) return [];
+  return claimGroups(readClaim(await userInfoClaims(accessToken, subject), claim));
 }
 
 /**
  * Decides a person's role at sign-in from their groups, stores it, and
  * returns it (null: no access, no session). With DIRECTORY=keycloak the
  * groups come from the Admin API, else from the sign-in's groups claim. When
- * the groups cannot be read, the last known role stays.
+ * the Keycloak API cannot be read, the last known role stays.
  */
-export async function refreshAccessAtSignIn(userId: string): Promise<Role | null> {
+export async function refreshAccessAtSignIn(userId: string, tokens: SignInTokens): Promise<Role | null> {
+  const claims = jwtClaims(tokens.idToken);
+  const subject = claims?.sub;
+  // Better Auth verifies an ID token when it is present. Require one in
+  // this exchange so roles cannot follow a stale token or a different account.
+  if (!claims || typeof subject !== "string" || !subject) return null;
+
   const db = getDb();
   const [user] = await db.select().from(users).where(eq(users.id, userId));
-  if (!user) return null;
-  if (isEnvironmentSuperadmin(user.email)) {
-    await db
-      .update(users)
-      .set({ role: "superadmin", roleSource: "environment", roleCheckedAt: sql`now()` })
-      .where(eq(users.id, userId));
-    return "superadmin";
-  }
-  const [account] = await db
-    .select({ accountId: accounts.accountId, idToken: accounts.idToken, accessToken: accounts.accessToken })
-    .from(accounts)
-    .where(and(eq(accounts.userId, userId), eq(accounts.providerId, "oidc")))
-    .orderBy(desc(accounts.updatedAt))
-    .limit(1);
-  if (!account) return null;
+  if (!user || (user.directoryId && user.directoryId !== subject)) return null;
 
   let role: Role | null;
   const keycloakMode = config().DIRECTORY === "keycloak";
+  const environmentSuperadmin = isEnvironmentSuperadmin(user.email);
   try {
-    const groups = keycloakMode
-      ? await keycloakClient().userGroups(account.accountId)
-      : await signInGroups(account);
-    role = roleFromGroups(groups);
-  } catch (error) {
-    logger.warn({ err: error, userId }, "could not read the groups at sign-in; the last known role stays");
-    return roleSchema.safeParse(user.role).data ?? null;
+    if (environmentSuperadmin) {
+      role = "superadmin";
+    } else {
+      const groups = keycloakMode
+        ? await keycloakClient().userGroups(subject)
+        : await signInGroups(claims, subject, tokens.accessToken);
+      role = roleFromGroups(groups);
+    }
+  } catch {
+    // Request errors can include an invalid Authorization header value.
+    logger.warn({ userId }, "could not read the groups at sign-in");
+    return keycloakMode && user.directoryId === subject
+      ? (roleSchema.safeParse(user.role).data ?? null)
+      : null;
   }
 
-  await db.transaction(async (tx) => {
-    // The provider's ID moved to this person (e.g. their email changed).
-    await tx
-      .update(users)
-      .set({ directoryId: null, role: null, roleSource: null, updatedAt: sql`now()` })
-      .where(and(eq(users.directoryId, account.accountId), ne(users.id, userId)));
-    await tx
-      .update(users)
-      .set({
-        role,
-        roleSource: role ? (keycloakMode ? "directory" : "sign_in") : null,
-        roleCheckedAt: sql`now()`,
-        directoryId: account.accountId,
-        updatedAt: sql`now()`,
-      })
-      .where(eq(users.id, userId));
-  });
+  const updated = await db
+    .transaction(async (tx) => {
+      // The provider's subject moved to this person (e.g. their email changed):
+      // the older entry loses the binding and its role.
+      await tx
+        .update(users)
+        .set({ directoryId: null, role: null, roleSource: null, updatedAt: sql`now()` })
+        .where(and(eq(users.directoryId, subject), ne(users.id, userId)));
+      // Do not let concurrent sign-ins bind one local user to different subjects.
+      const [row] = await tx
+        .update(users)
+        .set({
+          role,
+          roleSource: role
+            ? environmentSuperadmin
+              ? "environment"
+              : keycloakMode
+                ? "directory"
+                : "sign_in"
+            : null,
+          roleCheckedAt: sql`now()`,
+          directoryId: subject,
+          updatedAt: sql`now()`,
+        })
+        .where(and(eq(users.id, userId), or(isNull(users.directoryId), eq(users.directoryId, subject))))
+        .returning({ id: users.id });
+      if (!row) tx.rollback();
+      return row;
+    })
+    .catch((error: unknown) => {
+      if (error instanceof TransactionRollbackError) return undefined;
+      throw error;
+    });
+  if (!updated) return null;
   logger.info({ userId, role: role ?? "none" }, "access checked at sign-in");
   return role;
 }
