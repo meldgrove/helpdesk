@@ -74,6 +74,7 @@ function createAuth() {
           {
             providerId: "oidc",
             discoveryUrl: `${settings.OIDC_ISSUER.replace(/\/+$/, "")}/.well-known/openid-configuration`,
+            requireIdTokenVerification: true,
             clientId: settings.OIDC_CLIENT_ID,
             clientSecret: settings.OIDC_CLIENT_SECRET,
             scopes: settings.OIDC_SCOPES.split(/\s+/).filter(Boolean),

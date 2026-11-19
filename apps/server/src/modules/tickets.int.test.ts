@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+import { mkdir, rename, rmdir, stat } from "node:fs/promises";
+import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { asc, eq } from "drizzle-orm";
 import { DEFAULT_FORM, formDefinitionSchema } from "@helpdesk/shared/form";
 import { getDb } from "../db/client";
 import { attachments, categories, notifications, ticketEvents, tickets, users } from "../db/schema";
 import { lockUploads, pruneUnusedUploads } from "../attachments/storage";
+import { config } from "../config";
 import { createApp } from "../http/app";
 import { createUser, request, resetDatabase } from "../test/helpers";
 import { setUpIntegrations } from "../test/integrations";
@@ -501,6 +504,32 @@ describe("attachments", () => {
       (await request("GET", `/api/v1/attachments/${unused.body.id}`, { userId: requester.id })).status,
     ).toBe(404);
     expect(await pruneUnusedUploads()).toBe(1);
+  });
+
+  it("retries expired uploads after filesystem removal fails", async () => {
+    const file = await upload(requester);
+    expect(file.status).toBe(201);
+    const [expired] = await getDb()
+      .update(attachments)
+      .set({ createdAt: new Date(Date.now() - 25 * 60 * 60_000) })
+      .where(eq(attachments.id, file.body.id))
+      .returning({ storageKey: attachments.storageKey });
+    const target = path.resolve(config().ATTACHMENTS_DIR, expired!.storageKey);
+    const backup = `${target}.bak`;
+    await rename(target, backup);
+    await mkdir(target);
+    try {
+      expect(await pruneUnusedUploads()).toBe(0);
+      expect(await getDb().select().from(attachments).where(eq(attachments.id, file.body.id))).toHaveLength(
+        1,
+      );
+    } finally {
+      await rmdir(target);
+      await rename(backup, target);
+    }
+    expect(await pruneUnusedUploads()).toBe(1);
+    await expect(stat(target)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await getDb().select().from(attachments).where(eq(attachments.id, file.body.id))).toHaveLength(0);
   });
 
   it("stores uploads, links them to a ticket, and checks who may download", async () => {

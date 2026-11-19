@@ -118,6 +118,8 @@ jobs:
       - run: docker build -t helpdesk:ci .
       - name: The image runs as a non-root user
         run: test "$(docker run --rm --entrypoint id helpdesk:ci -u)" = "1000"
+      - name: The image excludes browser source maps
+        run: docker run --rm --entrypoint sh helpdesk:ci -c 'maps=$(find apps/web/dist -type f -name "*.map") && test -z "$maps"'
       - name: The image starts its processes
         run: |
           docker run --rm --entrypoint node helpdesk:ci --import /app/apps/server/dist/instrument.mjs -e "process.exit(0)"

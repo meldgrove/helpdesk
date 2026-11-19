@@ -10,7 +10,7 @@ import { deliverDue } from "./deliver";
 
 type Call = { url: string; body: string };
 let calls: Call[];
-let answer: (url: string, body: string) => Response;
+let answer: (url: string, body: string) => Response | Promise<Response>;
 
 beforeEach(async () => {
   await resetDatabase();
@@ -53,6 +53,59 @@ const stateOf = async (id: string) =>
   (await getDb().select().from(notifications).where(eq(notifications.id, id)))[0]!;
 
 describe("deliverDue", () => {
+  it("claims each notification just before sending it", async () => {
+    await setUpIntegrations(getDb());
+    const first = await queue({ nextAttemptAt: new Date(0) });
+    const second = await queue();
+    const states: string[][] = [];
+    answer = async () => {
+      states.push([(await stateOf(first.id)).status, (await stateOf(second.id)).status]);
+      return new Response(null, { status: 202 });
+    };
+    expect(await deliverDue()).toBe(2);
+    expect(states).toEqual([
+      ["sending", "pending"],
+      ["sent", "sending"],
+    ]);
+  });
+
+  it.each([
+    { earlier: 202, later: 503, expected: "pending", lastError: "MailerSend answered HTTP 503" },
+    { earlier: 503, later: 202, expected: "sent", lastError: null },
+  ])("preserves the latest attempt when an earlier send returns HTTP $earlier", async (test) => {
+    await setUpIntegrations(getDb());
+    const email = await queue();
+    const { promise: newerStarted, resolve: markNewerStarted } = Promise.withResolvers<void>();
+    const { promise: olderFinished, resolve: markOlderFinished } = Promise.withResolvers<void>();
+    let retry: Promise<number> | undefined;
+    answer = async () => {
+      if (calls.length > 1) {
+        markNewerStarted();
+        await olderFinished;
+        return new Response(null, { status: test.later });
+      }
+      await getDb()
+        .update(notifications)
+        .set({ leaseUntil: new Date(0) })
+        .where(eq(notifications.id, email.id));
+      retry = deliverDue(1);
+      await Promise.race([newerStarted, retry]);
+      return new Response(null, { status: test.earlier });
+    };
+    try {
+      expect(await deliverDue(1)).toBe(1);
+      expect(await stateOf(email.id)).toMatchObject({ status: "sending", attempts: 2, lastError: null });
+    } finally {
+      markOlderFinished();
+      await retry;
+    }
+    expect(await stateOf(email.id)).toMatchObject({
+      status: test.expected,
+      attempts: 2,
+      lastError: test.lastError,
+    });
+  });
+
   it("sends email over MailerSend and posts to the Slack channel", async () => {
     await setUpIntegrations(getDb());
     const email = await queue();

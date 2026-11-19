@@ -27,7 +27,8 @@ RUN --mount=type=secret,id=sentry_auth_token,env=SENTRY_AUTH_TOKEN \
       export SENTRY_CLI_NO_TELEMETRY=1 SENTRY_CLI_NO_UPDATE_CHECK=1 \
       && node_modules/.bin/sentry sourcemap upload apps/server/dist \
       && node_modules/.bin/sentry sourcemap upload apps/web/dist; \
-    fi
+    fi \
+    && find apps/web/dist -type f -name '*.map' -delete
 
 FROM base AS prod-deps
 RUN npm ci --omit=dev --workspace @helpdesk/server --include-workspace-root=false --no-audit --no-fund

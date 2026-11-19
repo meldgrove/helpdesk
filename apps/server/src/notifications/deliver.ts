@@ -1,4 +1,4 @@
-import { and, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { notifications, users } from "../db/schema";
 import { getStoredEmail, getStoredSlack } from "../core/settings";
@@ -20,23 +20,32 @@ const LEASE_SECONDS = 120;
 type Row = typeof notifications.$inferSelect;
 type Outcome = { status: "sent" | "skipped"; note?: string };
 
-/** Claims due notifications: pending ones, and ones whose sender stopped before finishing. */
-async function claim(limit: number): Promise<Row[]> {
-  const result = await getDb().execute<Record<string, unknown>>(sql`
-    update notifications set status = 'sending', attempts = attempts + 1,
-      lease_until = now() + make_interval(secs => ${LEASE_SECONDS})
-    where id in (
-      select id from notifications
-      where (status = 'pending' and next_attempt_at <= now())
-         or (status = 'sending' and lease_until < now())
-      order by next_attempt_at
-      limit ${limit}
-      for update skip locked
+/** Claims one due notification so its lease starts just before sending. */
+async function claim(): Promise<Row | undefined> {
+  const db = getDb();
+  const due = db
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(
+      or(
+        and(eq(notifications.status, "pending"), lte(notifications.nextAttemptAt, sql`now()`)),
+        and(eq(notifications.status, "sending"), lt(notifications.leaseUntil, sql`now()`)),
+      ),
     )
-    returning id`);
-  const ids = result.rows.map((row) => String(row.id));
-  if (ids.length === 0) return [];
-  return getDb().select().from(notifications).where(inArray(notifications.id, ids));
+    .orderBy(asc(notifications.nextAttemptAt))
+    .limit(1)
+    .for("update", { skipLocked: true });
+  const [row] = await db
+    .update(notifications)
+    .set({
+      status: "sending",
+      attempts: sql`${notifications.attempts} + 1`,
+      leaseUntil: sql`now() + make_interval(secs => ${LEASE_SECONDS})`,
+    })
+    // Materialize the locking query so the update evaluates LIMIT 1 only once.
+    .where(eq(notifications.id, sql`(with due as materialized (${due}) select id from due)`))
+    .returning();
+  return row;
 }
 
 type Transports = { email: EmailTransport | null; slack: SlackTransport | null };
@@ -111,13 +120,21 @@ async function send(row: Row, transports: Transports): Promise<Outcome> {
 
 /** Sends due notifications; returns how many it handled. */
 export async function deliverDue(limit = 20): Promise<number> {
-  const rows = await claim(limit);
-  if (rows.length === 0) return 0;
-  const transports = await loadTransports();
-  for (const row of rows) {
+  let transports: Transports | undefined;
+  let handled = 0;
+  for (; handled < limit; handled++) {
+    const row = await claim();
+    if (!row) break;
+    transports ??= await loadTransports();
+    // An expired lease may have been reclaimed while this send was in progress.
+    const currentAttempt = and(
+      eq(notifications.id, row.id),
+      eq(notifications.status, "sending"),
+      eq(notifications.attempts, row.attempts),
+    );
     try {
       const outcome = await send(row, transports);
-      await getDb()
+      const result = await getDb()
         .update(notifications)
         .set({
           status: outcome.status,
@@ -125,7 +142,8 @@ export async function deliverDue(limit = 20): Promise<number> {
           lastError: outcome.note ?? null,
           leaseUntil: null,
         })
-        .where(eq(notifications.id, row.id));
+        .where(currentAttempt);
+      if (!result.rowCount) continue;
       logger.info(
         { notificationId: row.id, code: outcome.status, channel: row.channel },
         "notification handled",
@@ -135,7 +153,7 @@ export async function deliverDue(limit = 20): Promise<number> {
       const finalAttempt = permanent || row.attempts >= MAX_ATTEMPTS;
       const message = error instanceof DeliveryError ? error.message : "Unexpected error while sending";
       const wait = BACKOFF_SECONDS[Math.min(row.attempts - 1, BACKOFF_SECONDS.length - 1)]!;
-      await getDb()
+      const result = await getDb()
         .update(notifications)
         .set({
           status: finalAttempt ? "failed" : "pending",
@@ -143,7 +161,8 @@ export async function deliverDue(limit = 20): Promise<number> {
           leaseUntil: null,
           nextAttemptAt: new Date(Date.now() + wait * 1000),
         })
-        .where(eq(notifications.id, row.id));
+        .where(currentAttempt);
+      if (!result.rowCount) continue;
       if (error instanceof DeliveryError) {
         logger.warn(
           {
@@ -160,7 +179,7 @@ export async function deliverDue(limit = 20): Promise<number> {
       }
     }
   }
-  return rows.length;
+  return handled;
 }
 
 /** Removes handled notifications after 90 days. */
