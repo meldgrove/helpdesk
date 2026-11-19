@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { asc, eq } from "drizzle-orm";
 import { DEFAULT_FORM, formDefinitionSchema } from "@helpdesk/shared/form";
 import { getDb } from "../db/client";
-import { categories, notifications, ticketEvents, tickets, users } from "../db/schema";
+import { attachments, categories, notifications, ticketEvents, tickets, users } from "../db/schema";
+import { lockUploads, pruneUnusedUploads } from "../attachments/storage";
+import { createApp } from "../http/app";
 import { createUser, request, resetDatabase } from "../test/helpers";
 import { setUpIntegrations } from "../test/integrations";
 
@@ -73,24 +76,27 @@ describe("access", () => {
   });
 
   it("refuses changes from other sites", async () => {
-    const response = await getAppRequest();
+    const response = await createApp().request("/api/v1/requests", {
+      method: "POST",
+      headers: {
+        origin: "https://evil.example",
+        "content-type": "application/json",
+        "x-test-user": requester.id,
+      },
+      body: JSON.stringify({ data: "x".repeat(512 * 1024) }),
+    });
     expect(response.status).toBe(403);
   });
-});
 
-async function getAppRequest() {
-  const { createApp } = await import("../http/app");
-  const response = await createApp().request("/api/v1/requests", {
-    method: "POST",
-    headers: {
-      origin: "https://evil.example",
-      "content-type": "application/json",
-      "x-test-user": requester.id,
-    },
-    body: "{}",
+  it("marks successful and rejected API responses as private and non-cacheable", async () => {
+    const signedIn = await request("GET", "/api/v1/me", { userId: requester.id });
+    const signedOut = await request("GET", "/api/v1/me");
+    expect(signedIn.status).toBe(200);
+    expect(signedOut.status).toBe(401);
+    expect(signedIn.headers.get("cache-control")).toBe("private, no-store");
+    expect(signedOut.headers.get("cache-control")).toBe("private, no-store");
   });
-  return response;
-}
+});
 
 describe("sending the form", () => {
   it("creates a ticket, keeps the answers as asked, and queues the notifications", async () => {
@@ -456,6 +462,46 @@ describe("attachments", () => {
     form.append("file", new File([content], name, { type: "application/pdf" }));
     return request("POST", "/api/v1/attachments", { userId: as.id, form });
   }
+
+  it("allows the larger body limit only on the upload route", async () => {
+    const contents = "x".repeat(600 * 1024);
+    expect((await upload(requester, "large.txt", contents)).status).toBe(201);
+    const invalidRoute = await request("POST", "/api/v1/other/attachments", {
+      userId: requester.id,
+      body: { contents },
+    });
+    expect(invalidRoute.status).toBe(413);
+  });
+
+  it("prunes expired uploads only when they are not locked by a ticket write", async () => {
+    const locked = await upload(requester);
+    const unused = await upload(requester);
+    for (const file of [locked, unused]) {
+      expect(file.status).toBe(201);
+      await getDb()
+        .update(attachments)
+        .set({ createdAt: new Date(Date.now() - 25 * 60 * 60_000) })
+        .where(eq(attachments.id, file.body.id));
+    }
+
+    let pruning: Promise<number> | undefined;
+    const prunedWhileLocked = await getDb().transaction(async (tx) => {
+      await lockUploads(tx, [locked.body.id], requester.id);
+      pruning = pruneUnusedUploads();
+      return Promise.race([pruning, delay(2_000, null, { ref: false })]);
+    });
+    await pruning;
+    expect(prunedWhileLocked).toBe(1);
+    const download = await request("GET", `/api/v1/attachments/${locked.body.id}`, {
+      userId: requester.id,
+    });
+    expect(download.body).toBe("%PDF-1.4 test");
+
+    expect(
+      (await request("GET", `/api/v1/attachments/${unused.body.id}`, { userId: requester.id })).status,
+    ).toBe(404);
+    expect(await pruneUnusedUploads()).toBe(1);
+  });
 
   it("stores uploads, links them to a ticket, and checks who may download", async () => {
     const file = await upload(requester);

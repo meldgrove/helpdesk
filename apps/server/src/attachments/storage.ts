@@ -120,19 +120,25 @@ export function readStoredFile(row: Row) {
 
 /** Removes uploads no ticket used within a day. */
 export async function pruneUnusedUploads(): Promise<number> {
-  const db = getDb();
-  const rows = await db
-    .select()
-    .from(attachments)
-    .where(
-      and(isNull(attachments.ticketId), lt(attachments.createdAt, new Date(Date.now() - 24 * 60 * 60_000))),
-    )
-    .limit(500);
-  for (const row of rows) {
-    await rm(filePath(row.storageKey), { force: true }).catch((error: unknown) =>
-      logger.warn({ err: error, attachmentId: row.id }, "could not remove an unused upload"),
-    );
-    await db.delete(attachments).where(eq(attachments.id, row.id));
-  }
-  return rows.length;
+  const cutoff = new Date(Date.now() - 24 * 60 * 60_000);
+  return getDb().transaction(async (tx) => {
+    // Ticket writes lock these rows before linking them. Hold the same locks through cleanup.
+    const rows = await tx
+      .select({ id: attachments.id, storageKey: attachments.storageKey })
+      .from(attachments)
+      .where(and(isNull(attachments.ticketId), lt(attachments.createdAt, cutoff)))
+      .limit(500)
+      .for("update", { skipLocked: true });
+    const removed: string[] = [];
+    for (const row of rows) {
+      try {
+        await rm(filePath(row.storageKey), { force: true });
+        removed.push(row.id);
+      } catch (error) {
+        logger.warn({ err: error, attachmentId: row.id }, "could not remove an unused upload");
+      }
+    }
+    if (removed.length > 0) await tx.delete(attachments).where(inArray(attachments.id, removed));
+    return removed.length;
+  });
 }
