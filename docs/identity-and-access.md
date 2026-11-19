@@ -30,7 +30,9 @@ Register a client at the provider with this redirect URL:
 ```
 
 and set `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The
-provider must return the email address (scopes `openid email profile`).
+provider must return the email address (scopes `openid email profile`). Its
+discovery document must include `issuer` and `jwks_uri` so the app can verify
+ID tokens.
 
 The app trusts the provider's email address and groups. Use your
 organization's own provider, where people cannot choose their address or
