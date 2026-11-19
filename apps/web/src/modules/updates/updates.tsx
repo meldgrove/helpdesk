@@ -23,8 +23,11 @@ export function SuperadminUpdates({ appName, children }: { appName: string; chil
       guideUrl={DEPLOYMENT_GUIDE}
       // US English dates, as everywhere in the app.
       dateLocale="en-US"
-      // 401, 403, 404 or a sign-in page: the app's sign-in handling, as for a 401 of any API request.
-      onSignedOut={sessionEnded}
+      // An ended session (401, sign-in page): the app's sign-in handling, as for a 401 of any
+      // API request. A lost superadmin role (403, 404) only stops the requests.
+      onSignedOut={(reason) => {
+        if (reason === "signed-out") sessionEnded();
+      }}
     >
       {children}
     </UpdatesProvider>
