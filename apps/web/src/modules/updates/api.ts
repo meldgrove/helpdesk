@@ -11,14 +11,18 @@ function isUpdatesResponse(value: unknown): value is UpdatesResponse {
 /**
  * A call to the updates routes. An updater that refused (409) still answers
  * with the latest status and `error`, so that resolves too; check `error`.
+ * Any other successful answer is a sign-in page after a redirect: 401.
  */
 async function call(request: () => Promise<UpdatesResponse>): Promise<UpdatesResponse> {
+  let data: unknown;
   try {
-    return await request();
+    data = await request();
   } catch (error) {
     if (error instanceof ApiError && error.status === 409 && isUpdatesResponse(error.body)) return error.body;
     throw error;
   }
+  if (!isUpdatesResponse(data)) throw new ApiError(401, "unauthorized", "Sign in again.");
+  return data;
 }
 
 export const fetchUpdates = (signal?: AbortSignal) =>

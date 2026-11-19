@@ -47,7 +47,11 @@ describe("the button with the real answers of Updater 0.2", () => {
   });
 
   it("is up to date when the platform decides and offers nothing", () => {
-    expect(stateOf("status-platform-locked")).toEqual({ kind: "up-to-date", installed: "0.1.2" });
+    expect(stateOf("status-platform-locked")).toEqual({
+      kind: "up-to-date",
+      installed: "0.1.2",
+      error: null,
+    });
   });
 
   it("shows a running installation and its stage", () => {

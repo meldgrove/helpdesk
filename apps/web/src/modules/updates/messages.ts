@@ -23,6 +23,8 @@ export const messages = defineMessages({
     needsSteps: "{version} needs upgrade steps",
     needsStepsText:
       "This release changes the setup. Take the upgrade steps from its release notes on the server first.",
+    tagLocked:
+      "The image tag set where {app} is deployed does not reach {version}. Take the upgrade steps, then change the tag there.",
     failedTitle: "Update to {version} failed",
     stillRunning: "{version} is still running.",
     tryAgain: "Try again",
@@ -34,6 +36,9 @@ export const messages = defineMessages({
     restarting: "Restarting…",
     restartsReloads: "{app} restarts. This page reloads when it is back.",
     slow: "This takes longer than expected. Check the server (journalctl -u meldgrove-updater-helpdesk).",
+    stopWaiting: "Stop waiting",
+    notStarted: "The installation did not start.",
+    notStartedReason: "The installation did not start: {reason}",
     confirmTitle: "Install {version} now?",
     confirmText: "{app} restarts and is unavailable for a moment. Database changes run automatically.",
     confirmAttentionTitle: "Install {version} without its upgrade steps?",
@@ -50,6 +55,7 @@ export const messages = defineMessages({
       "Automatic updates are off on this server, so it cannot install from here. See the {guide}.",
     unreachable: "No update service. See the deployment guide.",
     checkFailed: "The check failed: {error}",
+    checkFailedStatus: "Unknown: the last check failed",
 
     versionTitle: "Version",
     development: "development",
@@ -62,6 +68,7 @@ export const messages = defineMessages({
       "Unstable: every change on main as soon as its checks pass, before it is released. New features first, and now and then a new bug. Previews have no release notes.",
     switchBack: "Switching back to Stable keeps this version until a release is newer.",
     channelSaved: "Channel saved",
+    channelNotSaved: "The update service did not save the channel. Check again later.",
     automaticTitle: "Automatic installs",
     automaticOn: "On: releases install automatically after {cooldown}.",
     automaticOnWindow:

@@ -219,15 +219,21 @@ unit that waits for the updater's request and installs the version.
 not files: a release that changes `compose.yaml` needs a `git pull` (its
 upgrade steps say so).
 
-**Servers set up before the update button** get it, and the channel, this
-way:
+**Servers set up before the update button** (with updater 0.1 or an
+earlier release) get it, and the channel, this way: set `HELPDESK_VERSION`
+in `.env` to the release that brings the update button, or a newer one,
+then:
 
 ```sh
 cd /srv/helpdesk
 git pull
-docker compose up -d
+docker compose up -d --pull always
 docker compose run --rm -T --pull always updater host-setup > updater-setup.sh && sudo sh updater-setup.sh
 ```
+
+The third command starts that release, so the helpdesk itself, not just
+the updater, runs a version with the button before the host setup runs
+again.
 
 ## Backups
 

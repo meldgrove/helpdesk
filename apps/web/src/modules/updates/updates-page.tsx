@@ -38,11 +38,14 @@ function statusText(data: UpdatesResponse, t: Translate): string {
     case "installing":
       return t("installing", { version: state.version });
     case "failed":
-      return t("failedTitle", { version: state.update.version });
+      return t("failedTitle", { version: state.version });
     case "attention":
       return t("needsSteps", { version: state.update.version });
     case "available":
       return t("availableVersion", { version: state.update.version });
+    case "up-to-date":
+      // Not known after a failed check; the reason is shown below.
+      return state.error ? t("checkFailedStatus") : t("upToDate");
     default:
       // Checking: still name an update the updater found.
       return status?.available
@@ -182,7 +185,9 @@ function ChannelCard({ data }: { data: UpdatesResponse }) {
     if (channel === status?.channel) return;
     save.mutate(channel, {
       onSuccess: (result) => {
+        // Saved only when the updater answers with the chosen channel.
         if (result.error || !result.reachable) toast.error(result.error ?? t("unreachable"));
+        else if (result.updater?.channel !== channel) toast.error(t("channelNotSaved"));
         else toast.success(t("channelSaved"));
       },
       onError: (error) => toast.error(errorMessage(error)),

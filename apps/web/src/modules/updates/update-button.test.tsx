@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { toast } from "sonner";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { UpdatesResponse, UpdaterStatus } from "@helpdesk/shared/api/updates";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -45,9 +46,13 @@ const answer = (updater: UpdaterStatus | null, error: string | null = null): Upd
   error,
 });
 
-type Route = (method: string, path: string, body: unknown) => { status?: number; body: unknown } | undefined;
+type Route = (
+  method: string,
+  path: string,
+  body: unknown,
+) => { status?: number; body: unknown } | Error | undefined;
 
-/** Stubs fetch by route; /auth-config is answered for every test. */
+/** Stubs fetch by route (an Error: no answer); /auth-config is answered for every test. */
 function routeFetch(route: Route) {
   const mock = vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
@@ -60,6 +65,7 @@ function routeFetch(route: Route) {
             status: 404,
             body: { error: { code: "not_found", message: "Not found" } },
           });
+    if (reply instanceof Error) throw reply;
     return new Response(JSON.stringify(reply.body), {
       status: reply.status ?? 200,
       headers: { "content-type": "application/json" },
@@ -84,8 +90,20 @@ function renderButton() {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   window.sessionStorage.clear();
 });
+
+const stored = () => JSON.parse(window.sessionStorage.getItem("helpdesk.updates.installing") ?? "null");
+
+async function confirmInstall(button: string, action: string) {
+  await userEvent.click(await screen.findByRole("button", { name: button }));
+  await userEvent.click(await screen.findByRole("button", { name: action }));
+  await userEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Install" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+}
 
 describe("UpdateButton", () => {
   it("shows an available update and installs it after confirming", async () => {
@@ -136,6 +154,23 @@ describe("UpdateButton", () => {
     });
   });
 
+  it("shows the error of a failed check instead of up to date", async () => {
+    const error = vi.spyOn(toast, "error");
+    routeFetch((method, path) => {
+      if (path === "/updates") return { body: answer(status({ available: null })) };
+      if (path === "/updates/check")
+        return { body: answer(status({ available: null, error: "registry down" })) };
+    });
+    renderButton();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Up to date · 0.2.0" }));
+
+    expect(
+      await screen.findByRole("button", { name: "The check failed: registry down" }),
+    ).toBeInTheDocument();
+    expect(error).toHaveBeenCalledWith("The check failed: registry down");
+  });
+
   it("checks on click when up to date", async () => {
     const fetch = routeFetch((method, path) => {
       if (path === "/updates") return { body: answer(status({ available: null })) };
@@ -172,6 +207,67 @@ describe("UpdateButton", () => {
     expect(within(popover).getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 
+  it("shows why an installation it follows failed, before the offer says so", async () => {
+    const attention = { ...status().available!, version: "0.3.0", installsAt: null };
+    let current = status({ available: null, attention });
+    routeFetch((method, path) => {
+      if (method === "GET" && path === "/updates") return { body: answer(current) };
+      if (method === "POST" && path === "/updates/install") {
+        const startedAt = new Date().toISOString();
+        const accepted = answer(
+          status({
+            available: null,
+            attention,
+            installing: { version: "0.3.0", startedAt, manual: true, stage: "requested" },
+          }),
+        );
+        // The next status: rolled back, and the offer does not say so yet.
+        current = status({
+          available: null,
+          attention,
+          last: {
+            version: "0.3.0",
+            result: "rolled-back",
+            message: "migrate failed. 0.2.0 runs again.",
+            finishedAt: new Date(Date.now() + 1_000).toISOString(),
+          },
+        });
+        return { status: 202, body: accepted };
+      }
+    });
+    renderButton();
+
+    await confirmInstall("0.3.0 needs upgrade steps", "Install anyway…");
+
+    const popover = await screen.findByRole("dialog", undefined, { timeout: 5_000 });
+    expect(within(popover).getByText("Update to 0.3.0 failed")).toBeInTheDocument();
+    expect(within(popover).getByText("migrate failed. 0.2.0 runs again.")).toBeInTheDocument();
+    await userEvent.click(within(popover).getByRole("button", { name: "Try again" }));
+    expect(
+      within(await screen.findByRole("alertdialog")).getByText("Install 0.3.0 without its upgrade steps?"),
+    ).toBeInTheDocument();
+    expect(stored()).toBeNull();
+  });
+
+  it("explains that the image tag does not reach a release with upgrade steps", async () => {
+    const attention = { ...status().available!, version: "0.3.0", installsAt: null };
+    routeFetch(() => ({
+      body: answer(
+        status({ mode: "platform", channelLocked: "The tag decides.", available: null, attention }),
+      ),
+    }));
+    renderButton();
+
+    await userEvent.click(await screen.findByRole("button", { name: "0.3.0 needs upgrade steps" }));
+    const popover = await screen.findByRole("dialog");
+    expect(within(popover).queryByRole("button", { name: "Install anyway…" })).toBeNull();
+    expect(
+      within(popover).getByText(
+        "The image tag set where Helpdesk is deployed does not reach 0.3.0. Take the upgrade steps, then change the tag there.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("asks before installing an update that needs upgrade steps", async () => {
     const attention = { ...status().available!, version: "0.3.0", installsAt: null };
     routeFetch(() => ({ body: answer(status({ available: null, attention })) }));
@@ -200,8 +296,41 @@ describe("UpdateButton", () => {
     );
 
     await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Update available · 0.2.1" })).toBeInTheDocument();
-    expect(window.sessionStorage.getItem("helpdesk.updates.installing")).toBeNull();
+    expect(await screen.findByRole("button", { name: "Update available · 0.2.1" })).toBeInTheDocument();
+    expect(stored()).toBeNull();
+  });
+
+  it("follows the installation a refusal reports", async () => {
+    const running = {
+      version: "0.3.0",
+      startedAt: new Date().toISOString(),
+      manual: true,
+      stage: "pulling",
+    } as const;
+    routeFetch((method, path) => {
+      if (path === "/updates") return { body: answer(status()) };
+      if (path === "/updates/install")
+        return { status: 409, body: answer(status({ installing: running }), "An installation runs.") };
+    });
+    renderButton();
+
+    await confirmInstall("Update available · 0.2.1", "Install now");
+
+    expect(await screen.findByRole("button", { name: "Installing 0.3.0…" })).toBeInTheDocument();
+    expect(stored()).toMatchObject({ version: "0.3.0", confirmed: true, serverStartedAt: running.startedAt });
+  });
+
+  it("keeps the attempt when the install request gets no answer", async () => {
+    routeFetch((method, path) => {
+      if (path === "/updates") return { body: answer(status()) };
+      if (path === "/updates/install") return new TypeError("Failed to fetch");
+    });
+    renderButton();
+
+    await confirmInstall("Update available · 0.2.1", "Install now");
+
+    expect(await screen.findByRole("button", { name: "Installing 0.2.1…" })).toBeInTheDocument();
+    expect(stored()).toMatchObject({ version: "0.2.1", confirmed: false, reason: "Failed to fetch" });
   });
 
   it("says when there is no update service", async () => {
@@ -249,14 +378,41 @@ describe("UpdateButton", () => {
       JSON.stringify({
         version: "0.2.1",
         startedAt: Date.now(),
+        confirmed: true,
+        serverStartedAt: null,
+        reason: null,
         fromVersion: "0.2.0",
-        lastBefore: null,
         outage: true,
       }),
     );
     routeFetch(() => ({ body: answer(status()) }));
     renderButton();
     expect(await screen.findByRole("button", { name: "Installing 0.2.1…" })).toBeInTheDocument();
+  });
+
+  it("stops waiting after 15 minutes on request", async () => {
+    window.sessionStorage.setItem(
+      "helpdesk.updates.installing",
+      JSON.stringify({
+        version: "0.2.1",
+        startedAt: Date.now() - 16 * 60_000,
+        confirmed: true,
+        serverStartedAt: null,
+        reason: null,
+        fromVersion: "0.2.0",
+        outage: false,
+      }),
+    );
+    routeFetch(() => ({ body: answer(status()) }));
+    renderButton();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Installing 0.2.1…" }));
+    const popover = await screen.findByRole("dialog");
+    expect(await within(popover).findByText(/This takes longer than expected/)).toBeInTheDocument();
+    await userEvent.click(within(popover).getByRole("button", { name: "Stop waiting" }));
+
+    expect(await screen.findByRole("button", { name: "Update available · 0.2.1" })).toBeInTheDocument();
+    expect(stored()).toBeNull();
   });
 });
 
@@ -308,6 +464,22 @@ describe("UpdatesPage", () => {
     renderWithProviders(<UpdatesPage />);
 
     expect(await screen.findByText("Update to 0.2.1 failed")).toBeInTheDocument();
+  });
+
+  it("says when the updater did not save the channel", async () => {
+    const error = vi.spyOn(toast, "error");
+    routeFetch((method, path) => {
+      if (path === "/updates") return { body: answer(status()) };
+      if (path === "/updates/channel") return { body: answer(status()) };
+    });
+    renderWithProviders(<UpdatesPage />);
+
+    await userEvent.click(await screen.findByRole("radio", { name: /Preview/ }));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("The update service did not save the channel. Check again later."),
+    );
+    expect(screen.getByRole("radio", { name: /Stable/ })).toBeChecked();
   });
 
   it("disables the channel with the reason when it is locked", async () => {

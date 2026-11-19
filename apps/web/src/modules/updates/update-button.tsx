@@ -17,14 +17,24 @@ import { fetchUpdates, updatesKey, useCheckUpdates, useInstallUpdate, useUpdates
 import { messages } from "./messages";
 import { DEPLOYMENT_GUIDE_URL } from "./updates-page";
 import {
+  adoptInstall,
+  afterInstallAnswer,
   buttonState,
+  freshLast,
   hasPopover,
+  installAction,
+  installDidNotStart,
   installOutcome,
   isOutage,
+  isSignedOut,
+  newAttempt,
   readPendingInstall,
+  trackInstall,
   visibleNotes,
   writePendingInstall,
   type ButtonState,
+  type InstallAnswer,
+  type InstallFailure,
   type PendingInstall,
 } from "./state";
 
@@ -32,27 +42,36 @@ const POLL_MS = 2_000;
 const RELOAD_MS = 1_500;
 
 type Translate = ReturnType<typeof useT<typeof messages.en>>;
+type Action = ReturnType<typeof installAction>;
+
+const installKey = (version: string, startedAt: string | number) => `${version}@${startedAt}`;
 
 /**
- * Follows an installation this page started: polls every 2 s, takes failed
- * polls as the restart, and ends with a toast and a reload, or the failure.
- * `onFailed` must be stable.
+ * Follows an installation, one this page asked for or one a status reported:
+ * polls every 2 s, takes failed polls as the restart, and ends with a toast
+ * and a reload, or the failure. `onFailed` must be stable.
  */
 function useInstallWatch(onFailed: () => void) {
   const client = useQueryClient();
   const t = useT(messages);
   const [pending, setPendingState] = useState<PendingInstall | null>(readPendingInstall);
+  const [failure, setFailure] = useState<InstallFailure | null>(null);
   const [restarting, setRestarting] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const pendingRef = useRef(pending);
+  /** Done: the page reloads, and later answers change nothing. */
+  const doneRef = useRef(false);
+  /** The installation an admin stopped waiting for; not taken over again. */
+  const ignoredRef = useRef<string | null>(null);
 
-  const setPending = (value: PendingInstall | null) => {
+  const setPending = useCallback((value: PendingInstall | null) => {
     pendingRef.current = value;
     writePendingInstall(value);
     setPendingState(value);
-  };
+    if (value) setFailure(null);
+  }, []);
 
-  const key = pending ? `${pending.version}@${pending.startedAt}` : null;
+  const key = pending ? installKey(pending.version, pending.startedAt) : null;
   useEffect(() => {
     if (!key) return;
     let stopped = false;
@@ -63,30 +82,50 @@ function useInstallWatch(onFailed: () => void) {
         data = await fetchUpdates();
       } catch (error) {
         if (stopped) return;
-        if (isOutage(error) && pendingRef.current && !pendingRef.current.outage) {
-          pendingRef.current = { ...pendingRef.current, outage: true };
+        // Signed out: stop polling and keep the attempt for a later page load.
+        if (isSignedOut(error)) {
+          setRestarting(false);
+          return;
+        }
+        const followed = pendingRef.current;
+        if (isOutage(error) && followed && !followed.outage) {
+          pendingRef.current = { ...followed, outage: true };
           writePendingInstall(pendingRef.current);
         }
         setRestarting(isOutage(error));
       }
       if (stopped) return;
-      setNow(Date.now());
-      if (data && pendingRef.current) {
-        setRestarting(false);
+      const at = Date.now();
+      setNow(at);
+      const current = pendingRef.current;
+      if (data && current) {
         client.setQueryData(updatesKey, data);
-        const outcome = installOutcome(pendingRef.current, data);
+        // No updater while the app restarts is expected, too.
+        setRestarting(!data.reachable);
+        const tracked = trackInstall(current, data, at);
+        if (tracked !== current) {
+          setPending(tracked);
+          // Another installation: the effect starts again for it.
+          if (installKey(tracked.version, tracked.startedAt) !== key) return;
+        }
+        const outcome = installOutcome(tracked, data);
         if (outcome === "done") {
-          const { version } = pendingRef.current;
+          doneRef.current = true;
           writePendingInstall(null);
-          toast.success(t("updated", { version }));
-          setTimeout(() => window.location.reload(), RELOAD_MS);
+          toast.success(t("updated", { version: tracked.version }));
+          timer = setTimeout(() => window.location.reload(), RELOAD_MS);
           return;
         }
         if (outcome === "failed") {
-          pendingRef.current = null;
-          writePendingInstall(null);
-          setPendingState(null);
+          const last = freshLast(tracked, data)!;
+          setPending(null);
+          setFailure({ version: tracked.version, message: last.message, finishedAt: last.finishedAt });
           onFailed();
+          return;
+        }
+        if (installDidNotStart(tracked, at)) {
+          setPending(null);
+          toast.error(tracked.reason ? t("notStartedReason", { reason: tracked.reason }) : t("notStarted"));
           return;
         }
       }
@@ -97,9 +136,57 @@ function useInstallWatch(onFailed: () => void) {
       stopped = true;
       clearTimeout(timer);
     };
-  }, [key, client, t, onFailed]);
+  }, [key, client, t, onFailed, setPending]);
 
-  return { pending, setPending, restarting, now };
+  /** Remembers an attempt before its install request, so a restart that comes first finds it. */
+  const begin = useCallback(
+    (version: string, fromVersion: string | null) => {
+      const attempt = newAttempt(version, fromVersion, Date.now());
+      doneRef.current = false;
+      setPending(attempt);
+      return attempt;
+    },
+    [setPending],
+  );
+
+  /** Applies the install request's answer, unless the attempt ended meanwhile; returns the error to show. */
+  const settle = useCallback(
+    (attempt: PendingInstall, answer: InstallAnswer): string | null => {
+      const current = pendingRef.current;
+      if (
+        doneRef.current ||
+        !current ||
+        installKey(current.version, current.startedAt) !== installKey(attempt.version, attempt.startedAt)
+      ) {
+        return null;
+      }
+      const next = afterInstallAnswer(current, answer, Date.now());
+      if (next.pending !== current) setPending(next.pending);
+      return next.error;
+    },
+    [setPending],
+  );
+
+  /** Follows an installation a status reports, while this page follows none. */
+  const adopt = useCallback(
+    (data: UpdatesResponse) => {
+      if (pendingRef.current || doneRef.current) return;
+      const next = adoptInstall(data, Date.now());
+      if (next && installKey(next.version, next.serverStartedAt ?? "") !== ignoredRef.current)
+        setPending(next);
+    },
+    [setPending],
+  );
+
+  /** Stop waiting: forget the attempt and poll as usual again. */
+  const stop = useCallback(() => {
+    const installing = client.getQueryData<UpdatesResponse>(updatesKey)?.updater?.installing;
+    ignoredRef.current = installing ? installKey(installing.version, installing.startedAt) : null;
+    setRestarting(false);
+    setPending(null);
+  }, [client, setPending]);
+
+  return { pending, failure, restarting, now, begin, settle, adopt, stop };
 }
 
 function tooltip(state: ButtonState, t: Translate): string {
@@ -107,6 +194,8 @@ function tooltip(state: ButtonState, t: Translate): string {
     case "checking":
       return t("checking");
     case "up-to-date":
+      // After a failed check it is not known whether this is the newest version.
+      if (state.error) return t("checkFailed", { error: state.error });
       return state.installed ? t("upToDateVersion", { version: state.installed }) : t("upToDate");
     case "available":
       return t("availableVersion", { version: state.update.version });
@@ -115,7 +204,7 @@ function tooltip(state: ButtonState, t: Translate): string {
     case "installing":
       return state.restarting ? t("restarting") : t("installing", { version: state.version });
     case "failed":
-      return t("failedTitle", { version: state.update.version });
+      return t("failedTitle", { version: state.version });
     case "off":
       return t("off");
     case "unreachable":
@@ -172,9 +261,19 @@ function Title({ children }: { children: ReactNode }) {
   return <h2 className="font-medium break-words">{children}</h2>;
 }
 
-/** In mode off, in place of the install buttons: nothing can install from here. */
-function OffNote() {
+/**
+ * In place of the install buttons: in mode off nothing can install from here;
+ * a release with upgrade steps that the deployment's image tag does not reach
+ * needs the tag changed there.
+ */
+function ActionNote({ action, version, appName }: { action: Action; version: string; appName: string }) {
   const t = useT(messages);
+  if (action === "locked") {
+    return (
+      <p className="text-muted-foreground text-sm break-words">{t("tagLocked", { app: appName, version })}</p>
+    );
+  }
+  if (action !== "off") return null;
   const [before, after] = t("offCannotInstall").split("{guide}");
   return (
     <p className="text-muted-foreground text-sm">
@@ -192,7 +291,8 @@ function OffNote() {
   );
 }
 
-function AvailableView({ update, onInstall }: { update: Update; onInstall: (() => void) | null }) {
+function AvailableView(props: { update: Update; action: Action; appName: string; onInstall: () => void }) {
+  const { update } = props;
   const t = useT(messages);
   const format = useFormatter();
   const { notes, more } = visibleNotes(update);
@@ -227,57 +327,61 @@ function AvailableView({ update, onInstall }: { update: Update; onInstall: (() =
       ) : null}
       {update.url ? <ReleaseNotesLink url={update.url} /> : null}
       {installsAt ? <p className="text-muted-foreground text-sm">{installsAt}</p> : null}
-      {onInstall ? (
-        <Button size="sm" onClick={onInstall}>
+      {props.action === "install" ? (
+        <Button size="sm" onClick={props.onInstall}>
           {t("installNow")}
         </Button>
       ) : (
-        <OffNote />
+        <ActionNote action={props.action} version={update.version} appName={props.appName} />
       )}
     </div>
   );
 }
 
-function AttentionView({ update, onInstall }: { update: Update; onInstall: (() => void) | null }) {
+function AttentionView(props: { update: Update; action: Action; appName: string; onInstall: () => void }) {
   const t = useT(messages);
+  const { update } = props;
   return (
     <div className="grid gap-3">
       <Title>{t("needsSteps", { version: update.version })}</Title>
       <p className="text-muted-foreground text-sm">{t("needsStepsText")}</p>
       {update.url ? <ReleaseNotesLink url={update.url} /> : null}
-      {onInstall ? (
-        <Button size="sm" variant="outline" onClick={onInstall}>
+      {props.action === "install-anyway" ? (
+        <Button size="sm" variant="outline" onClick={props.onInstall}>
           {t("installAnyway")}
         </Button>
       ) : (
-        <OffNote />
+        <ActionNote action={props.action} version={update.version} appName={props.appName} />
       )}
     </div>
   );
 }
 
 function FailedView(props: {
-  update: Update;
+  version: string;
   message: string | null;
   running: string | null;
-  onRetry: (() => void) | null;
+  action: Action;
+  appName: string;
+  onRetry: () => void;
 }) {
   const t = useT(messages);
   return (
     <div className="grid gap-3">
-      <Title>{t("failedTitle", { version: props.update.version })}</Title>
+      <Title>{t("failedTitle", { version: props.version })}</Title>
       {props.message ? (
         <p className="text-destructive text-sm break-words whitespace-pre-line">{props.message}</p>
       ) : null}
       {props.running ? (
         <p className="text-muted-foreground text-sm">{t("stillRunning", { version: props.running })}</p>
       ) : null}
-      {props.onRetry ? (
+      {/* Only while the version is still offered; a release with upgrade steps asks again. */}
+      {props.action === "install" || props.action === "install-anyway" ? (
         <Button size="sm" onClick={props.onRetry}>
           {t("tryAgain")}
         </Button>
       ) : (
-        <OffNote />
+        <ActionNote action={props.action} version={props.version} appName={props.appName} />
       )}
     </div>
   );
@@ -287,6 +391,7 @@ function InstallingView(props: {
   state: Extract<ButtonState, { kind: "installing" }>;
   running: string | null;
   appName: string;
+  onStop: () => void;
 }) {
   const t = useT(messages);
   const { state } = props;
@@ -301,10 +406,15 @@ function InstallingView(props: {
       {stage ? <p className="text-sm">{stage}</p> : null}
       <p className="text-muted-foreground text-sm">{t("restartsReloads", { app: props.appName })}</p>
       {state.slow ? (
-        <p className="flex gap-2 text-sm">
-          <TriangleAlert className="text-warning mt-0.5 size-4 shrink-0" aria-hidden />
-          <span className="break-words">{t("slow")}</span>
-        </p>
+        <>
+          <p className="flex gap-2 text-sm">
+            <TriangleAlert className="text-warning mt-0.5 size-4 shrink-0" aria-hidden />
+            <span className="break-words">{t("slow")}</span>
+          </p>
+          <Button size="sm" variant="outline" className="w-fit" onClick={props.onStop}>
+            {t("stopWaiting")}
+          </Button>
+        </>
       ) : null}
     </div>
   );
@@ -360,13 +470,20 @@ export function UpdateButton() {
   const query = useUpdates({ polling: !watch.pending });
   const check = useCheckUpdates();
   const install = useInstallUpdate();
+  const { adopt } = watch;
 
   const data = query.data;
+  // Follow an installation that a poll, a check or a refused install reports.
+  useEffect(() => {
+    if (data) adopt(data);
+  }, [data, adopt]);
+
   const state = buttonState({
     data,
     loadFailed: query.isError,
     checking: check.isPending,
     pending: watch.pending,
+    failure: watch.failure,
     restarting: watch.restarting,
     now: watch.now,
   });
@@ -375,8 +492,6 @@ export function UpdateButton() {
   const status = data?.reachable ? data.updater : null;
   const installed = status?.installed ?? data?.app.version ?? null;
   const popover = hasPopover(state);
-  // Mode off: the popover shows the update, but nothing can install from here.
-  const installable = status?.mode !== "off";
   const label = tooltip(state, t);
 
   const runCheck = () =>
@@ -389,31 +504,22 @@ export function UpdateButton() {
     });
 
   const startInstall = async ({ version }: Confirm) => {
-    const before = query.data;
-    let result: UpdatesResponse;
-    try {
-      result = await install.mutateAsync(version);
-    } catch (error) {
-      toast.error(errorMessage(error));
-      throw error;
-    }
-    if (!result.reachable || result.error) {
-      toast.error(result.error ?? t("unreachable"));
-      return;
-    }
+    // Remembered before the request: a platform can restart the app before it answers.
+    const attempt = watch.begin(version, query.data?.app.version ?? null);
     setOpen(false);
-    watch.setPending({
-      version,
-      startedAt: Date.now(),
-      fromVersion: before?.app.version ?? null,
-      lastBefore: before?.updater?.last?.finishedAt ?? null,
-      outage: false,
-    });
+    let answer: InstallAnswer;
+    try {
+      answer = { data: await install.mutateAsync(version) };
+    } catch (error) {
+      answer = { error };
+    }
+    const error = watch.settle(attempt, answer);
+    if (error) toast.error(error);
   };
 
-  const ask = (update: Update, attention: boolean) => {
+  const ask = (version: string, url: string | null, attention: boolean) => {
     setOpen(false);
-    setConfirm({ version: update.version, attention, url: update.url });
+    setConfirm({ version, attention, url });
   };
 
   return (
@@ -446,22 +552,30 @@ export function UpdateButton() {
           {state.kind === "available" ? (
             <AvailableView
               update={state.update}
-              onInstall={installable ? () => ask(state.update, false) : null}
+              action={installAction(status, state.update.version)}
+              appName={appName}
+              onInstall={() => ask(state.update.version, state.update.url, false)}
             />
           ) : state.kind === "attention" ? (
             <AttentionView
               update={state.update}
-              onInstall={installable ? () => ask(state.update, true) : null}
+              action={installAction(status, state.update.version)}
+              appName={appName}
+              onInstall={() => ask(state.update.version, state.update.url, true)}
             />
           ) : state.kind === "failed" ? (
             <FailedView
-              update={state.update}
+              version={state.version}
               message={state.message}
               running={installed}
-              onRetry={
-                installable
-                  ? () => ask(state.update, status?.attention?.version === state.update.version)
-                  : null
+              action={installAction(status, state.version)}
+              appName={appName}
+              onRetry={() =>
+                ask(
+                  state.version,
+                  state.update?.url ?? null,
+                  installAction(status, state.version) === "install-anyway",
+                )
               }
             />
           ) : state.kind === "installing" ? (
@@ -469,6 +583,7 @@ export function UpdateButton() {
               state={state}
               running={watch.pending?.fromVersion ?? installed}
               appName={appName}
+              onStop={watch.stop}
             />
           ) : null}
           {status ? (
