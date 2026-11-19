@@ -1,20 +1,21 @@
 # Deployment
 
-For the person who runs the helpdesk on a server: requirements, the setup
-on [Coolify](#coolify) or on a [Debian server](#debian), sign-in, upgrades,
-automatic updates, backups, Sentry and troubleshooting. Every environment
+For the person who runs the helpdesk on a Linux server, such as a VPS with
+Debian or Ubuntu: requirements, [setup](#setup), sign-in, upgrades,
+automatic updates, backups, Sentry and troubleshooting. To run it on Coolify
+instead, see [Coolify](coolify.md). Every environment
 variable is described in [Configuration](configuration.md); the form,
 categories, email and Slack are set up afterwards in the app
 ([Admin guide](admin-guide.md)).
 
 ## Requirements
 
-- **Coolify, or a server with Debian 12 or later** (or a similar system with
-  systemd and apt, such as Ubuntu 24.04), with Docker Engine and its Compose
-  plugin.
-- **PostgreSQL 16 or later.**
-- **A reverse proxy that terminates HTTPS**: Coolify's own, or Caddy on
-  Debian.
+- **A server with Debian 12 or later** (or a similar system with systemd and
+  apt, such as Ubuntu 24.04), with Docker Engine and its Compose plugin, and
+  a domain name that points at it.
+- **PostgreSQL 16 or later**: a database of your own, or the one
+  `compose.postgres.yaml` adds.
+- **Caddy** (or another reverse proxy on the server) that terminates HTTPS.
 - **An OpenID Connect provider** for sign-in whose groups decide the roles:
   Keycloak, or any provider that puts groups into the sign-in
   ([Identity and access](identity-and-access.md)).
@@ -36,10 +37,13 @@ changes after 0.1.0) and the tag `preview`.
 | `Dockerfile`            | The image. Its command (`all`, `web`, `worker`, `migrate`) picks the role.         |
 | `compose.yaml`          | A one-off `migrate`, the web app (`web`), the `worker` and the optional `updater`. |
 | `compose.postgres.yaml` | Adds a PostgreSQL 18 container, for servers without a database of their own.       |
+| `compose.coolify.yaml`  | The same as `compose.yaml`, for [Coolify](coolify.md).                             |
 
 The image runs as an unprivileged user (uid 1000). `web` listens on port
 3000, published on `127.0.0.1:3000` for a reverse proxy on the same machine;
-`HELPDESK_PORT` changes the host port. Uploaded files are stored in the
+`HELPDESK_PORT` changes the host port. With several apps on one server, give
+each its own port and its own site in the Caddyfile. Uploaded files are
+stored in the
 volume `attachments` (`/data/attachments` in the container). The branch
 `stable` is at the newest release; `main` has changes that are not released
 yet.
@@ -50,32 +54,7 @@ Platforms that run a single image (no Compose) can use the command `all`
 with `RUN_MIGRATIONS=true`: the web app and the worker then share one
 process. Mount a volume at `/data/attachments`.
 
-## Coolify
-
-1. **Database:** create a PostgreSQL resource (16 or later) and copy its
-   internal URL.
-2. **Application:** create a Docker Compose resource from the public
-   repository `https://github.com/meldgrove/helpdesk`, branch `stable`,
-   Docker Compose location `/compose.yaml`. Under Advanced, set Auto deploy
-   to "Manual deployments only", so that only releases deploy, and turn on
-   "Connect To Predefined Network", so that the app reaches the database.
-3. **Domain:** assign the domain, such as `https://helpdesk.example.org`, to
-   `web`, port 3000.
-4. **Register the app at your provider** with the redirect URL
-   `<APP_URL>/api/auth/callback/oidc` ([Identity and access](identity-and-access.md)).
-5. **Environment variables** of the resource: `HELPDESK_VERSION` (a series
-   such as `0.1`, see [On Coolify](#on-coolify)), `APP_URL`
-   (the domain), `DATABASE_URL` (the database's internal URL), new secrets
-   (`openssl rand -base64 32` for `AUTH_SECRET` and `ENCRYPTION_KEY`), the
-   `OIDC_*` values, `DIRECTORY` and the groups
-   ([Identity and access](identity-and-access.md)), and your address in
-   `SUPERADMIN_EMAILS`.
-6. **Deploy**, open `APP_URL` and sign in.
-7. **Continue in the app** ([Admin guide](admin-guide.md)): set up email and
-   Slack, then the categories and the form.
-8. **Automatic updates:** set them up [on Coolify](#on-coolify).
-
-## Debian
+## Setup
 
 On a server with Debian 12 or later, or a similar system such as Ubuntu,
 run the commands as root (`sudo -i`).
@@ -106,7 +85,9 @@ run the commands as root (`sudo -i`).
    `DATABASE_URL=postgres://helpdesk:<POSTGRES_PASSWORD>@postgres:5432/helpdesk`.
 5. **Start:** `docker compose up -d --pull always`.
 6. **HTTPS:** point the domain's DNS at the server, install Caddy
-   (`apt install caddy`), and replace `/etc/caddy/Caddyfile` with:
+   (`apt install caddy`), and put this site into `/etc/caddy/Caddyfile`, in
+   place of the package's example site `:80` and next to the sites of other
+   apps:
 
    ```text
    helpdesk.example.org {
@@ -120,7 +101,7 @@ run the commands as root (`sudo -i`).
 7. Open `APP_URL` and sign in.
 8. **Continue in the app** ([Admin guide](admin-guide.md)): set up email and
    Slack, then the categories and the form.
-9. **Automatic updates:** set them up [on Debian](#on-debian).
+9. **Automatic updates:** [set them up](#setup-on-the-server).
 
 ## Health checks
 
@@ -133,14 +114,10 @@ run the commands as root (`sudo -i`).
 
 1. Read the release notes. Releases with **Upgrade steps needed** start a
    new series and list what to do.
-2. Take the steps, then move to the new series:
-   - **Coolify:** change `HELPDESK_VERSION` in the resource's environment
-     variables and redeploy. Coolify reads `compose.yaml` from `stable`,
-     which is at the newest release.
-   - **Debian:** in `/srv/helpdesk`, run `git pull` (the newest release's
-     `compose.yaml`), then click **Install anyway…** at the update button,
-     or change `HELPDESK_VERSION` in `.env` and run
-     `docker compose up -d --pull always`.
+2. Take the steps, then move to the new series: in `/srv/helpdesk`, run
+   `git pull` (the newest release's `compose.yaml`), then click
+   **Install anyway…** at the update button, or change `HELPDESK_VERSION` in
+   `.env` and run `docker compose up -d --pull always`.
 
 The `migrate` service applies database migrations before `web` and `worker`
 start.
@@ -148,8 +125,9 @@ start.
 ## Automatic updates
 
 The `updater` service ([meldgrove/updater](https://github.com/meldgrove/updater))
-checks for new versions every hour, installs them, and tells superadmins in
-the app. Set up [backups](#backups) first: migrations run without anyone
+checks for new versions every hour, installs them once the
+[host setup](#setup-on-the-server) runs, and tells superadmins in the app.
+Set up [backups](#backups) first: migrations run without anyone
 watching. There are two channels:
 
 - **Stable** (default): releases. A release without upgrade steps (the same
@@ -177,23 +155,7 @@ channel. The app reaches the updater at `UPDATER_URL`
 (default `http://updater:8080`); without it, the icon says "No update
 service". The updater's API has no authentication: never publish its port.
 
-### On Coolify
-
-Coolify installs the image that the tag in `HELPDESK_VERSION` points to: a
-series such as `0.1` (releases without upgrade steps), `latest` (every
-release), or `preview` (the Preview channel). The tag decides the channel;
-the app cannot change it.
-
-1. Under Settings > Advanced, turn on API Access if it is off.
-2. Under Keys & Tokens > API Tokens, create a token with only the `deploy`
-   permission; clear `read`. Coolify shows it only once.
-3. In the Helpdesk resource, select Webhooks and copy Deploy Webhook.
-4. In the resource's environment variables, set `UPDATE_DEPLOY_HOOK_URL` to
-   the webhook and `UPDATE_DEPLOY_HOOK_TOKEN` to the token, then redeploy.
-
-The `updater` log then names the tag it watches.
-
-### On Debian
+### Setup on the server
 
 The server installs the exact version: it writes it into `HELPDESK_VERSION`
 in `.env`, pulls the image, runs the migrations, starts the helpdesk and
@@ -201,7 +163,7 @@ waits until it is healthy. When it does not become healthy, the server goes
 back to the version before, and the update button shows why. Superadmins
 choose the channel in the app.
 
-As root in `/srv/helpdesk`, with `UPDATE_DEPLOY_HOOK_URL` empty:
+As root in `/srv/helpdesk`:
 
 ```sh
 docker compose up -d --pull always
