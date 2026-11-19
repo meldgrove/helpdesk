@@ -84,20 +84,29 @@ export function createApp() {
   });
 
   const jsonLimit = bodyLimit({ maxSize: 512 * 1024 });
-  const authHandler: MiddlewareHandler<AppEnv> = (c) => {
+  const authHandler: MiddlewareHandler<AppEnv> = async (c) => {
     // Replace any client-supplied value with the address the app trusts.
     const headers = new Headers(c.req.raw.headers);
     headers.set(CLIENT_IP_HEADER, clientIp(c) ?? "unknown");
     const body = c.req.method === "GET" ? undefined : c.req.raw.body;
-    return auth().handler(
-      new Request(c.req.raw.url, {
-        method: c.req.method,
-        headers,
-        body,
-        duplex: "half",
-        signal: c.req.raw.signal,
-      } as RequestInit),
-    );
+    try {
+      return await auth().handler(
+        new Request(c.req.raw.url, {
+          method: c.req.method,
+          headers,
+          body,
+          duplex: "half",
+          signal: c.req.raw.signal,
+        } as RequestInit),
+      );
+    } catch {
+      // Auth failures can contain credentials or provider responses.
+      logger.error(
+        { requestId: c.get("requestId"), route: c.req.routePath },
+        "authentication request failed",
+      );
+      throw new AppError(500, "internal_error", "Something went wrong. Try again.");
+    }
   };
   // Only expose the session flow. Better Auth also has account management and
   // provider-token endpoints that Helpdesk does not use.

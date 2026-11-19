@@ -25,6 +25,11 @@ function createAuth() {
     basePath: "/api/auth",
     secret: settings.AUTH_SECRET,
     trustedOrigins: [settings.APP_URL],
+    onAPIError: {
+      // Let the app handle unexpected failures before the router can log them.
+      throw: true,
+      errorURL: new URL("/sign-in", appUrl).toString(),
+    },
     // Auth library diagnostics can contain provider responses and query values.
     logger: {
       log: (level) => logger[level]("authentication library reported a problem"),
