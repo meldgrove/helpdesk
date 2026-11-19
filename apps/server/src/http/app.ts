@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
 import { bodyLimit } from "hono/body-limit";
 import { ZodError } from "zod";
+import type { MiddlewareHandler } from "hono";
 import type { AppEnv } from "./env";
 import { AppError, zodFieldErrors } from "./errors";
 import { authenticate, requestId, requestLog, sameOrigin } from "./middleware";
@@ -83,8 +84,7 @@ export function createApp() {
   });
 
   const jsonLimit = bodyLimit({ maxSize: 512 * 1024 });
-  app.post("/api/auth/*", jsonLimit);
-  app.on(["GET", "POST"], "/api/auth/*", (c) => {
+  const authHandler: MiddlewareHandler<AppEnv> = (c) => {
     // Replace any client-supplied value with the address the app trusts.
     const headers = new Headers(c.req.raw.headers);
     headers.set(CLIENT_IP_HEADER, clientIp(c) ?? "unknown");
@@ -98,7 +98,12 @@ export function createApp() {
         signal: c.req.raw.signal,
       } as RequestInit),
     );
-  });
+  };
+  // Only expose the session flow. Better Auth also has account management and
+  // provider-token endpoints that Helpdesk does not use.
+  app.on(["GET", "POST"], "/api/auth/callback/oidc", jsonLimit, authHandler);
+  app.post("/api/auth/sign-in/social", jsonLimit, authHandler);
+  app.post("/api/auth/sign-out", jsonLimit, authHandler);
 
   const api = new Hono<AppEnv>();
   const uploadLimit = bodyLimit({ maxSize: MAX_ATTACHMENT_BYTES + 64 * 1024 });

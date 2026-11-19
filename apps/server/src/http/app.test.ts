@@ -22,6 +22,19 @@ describe("authentication requests", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
+  it("keeps provider token and account management routes private", async () => {
+    for (const [method, endpoint] of [
+      ["POST", "get-access-token"],
+      ["GET", "account-info"],
+      ["GET", "get-session"],
+      ["POST", "link-social"],
+    ] as const) {
+      const response = await app.request(`/api/auth/${endpoint}`, { method });
+      expect(response.status).toBe(404);
+    }
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   it.each(["declared length", "stream"])(
     "rejects oversized bodies with %s before authentication",
     async (mode) => {
