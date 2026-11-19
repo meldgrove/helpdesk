@@ -1,7 +1,7 @@
 import type { Status } from "@helpdesk/shared/tickets";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@meldgrove/ui/avatar";
 import { useFormatter } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { cn } from "@meldgrove/ui/utils";
 import { initials } from "./display";
 
 const STATUS_DOT: Record<Status, string> = {

@@ -33,7 +33,7 @@ import { BOARD_CLOSED_DAYS, STATUSES, isClosed, type Status } from "@helpdesk/sh
 import { useMe } from "@/hooks/use-me";
 import { useT } from "@/i18n";
 import { useStatusLabel } from "@/lib/labels";
-import { cn } from "@/lib/utils";
+import { cn } from "@meldgrove/ui/utils";
 import { useUpdateTicket } from "@/modules/tickets/api";
 import { StatusDot } from "@/modules/tickets/bits";
 import { useMoveTicket } from "./api";

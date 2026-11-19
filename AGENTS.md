@@ -13,8 +13,9 @@ npm workspaces, Node.js 26, strict TypeScript.
 - `apps/server`: Hono (API under `/api/v1`), Better Auth (OIDC sign-in under
   `/api/auth`), Drizzle ORM on PostgreSQL, nodemailer, pino logs, Sentry,
   Vitest.
-- `apps/web`: Vite + React 19, TanStack Router and Query, shadcn/ui with
-  Tailwind CSS 4, dnd-kit (board), react-hook-form with zod. English (US); the
+- `apps/web`: Vite + React 19, TanStack Router and Query, Tailwind CSS 4
+  with `@meldgrove/ui` (the shared Meldgrove theme, shadcn/ui components and
+  update button), dnd-kit (board), react-hook-form with zod. English (US); the
   request form also in German.
 - `packages/shared` (`@helpdesk/shared/*`): zod schemas of the API
   (`api/*.ts`), roles, ticket constants, the form model and its show-if and
@@ -60,6 +61,9 @@ packages/shared/src/  contracts, roles, tickets, form
   the same transaction (`Outbox`). The worker sends them.
 - **Secrets** (SMTP password, MailerSend and Slack tokens) are stored with
   `encryptSecret` and never returned or logged; responses show hints.
+- **UI components** come from `@meldgrove/ui` (`@meldgrove/ui/<name>`, `cn`
+  from `@meldgrove/ui/utils`); the app keeps no copies. A missing component or
+  a fix goes into that package.
 - **Errors:** throw `AppError` helpers (`http/errors.ts`) with short, plain
   messages.
 - **Logging:** `logger` with ids and codes; never ticket texts, answers,

@@ -99,9 +99,11 @@ again on every request.
 The `updater` service of `compose.yaml` (the Meldgrove Updater) finds and
 installs new versions. `modules/updates.ts` passes the superadmins' requests
 to its API at `UPDATER_URL` (`updates/client.ts`, with timeouts) and answers
-with its status; the update button (`modules/updates/update-button.tsx`)
-derives what to show from that status (`state.ts`) and follows an
-installation through the restart.
+with its status. The update button and the Updates page come from the
+shared package `@meldgrove/ui`: `modules/updates/updates.tsx` gives
+superadmins its `UpdatesProvider`, which the header button and
+`/admin/updates` share. It derives what to show from that status and follows
+an installation through the restart.
 
 ## Sentry
 

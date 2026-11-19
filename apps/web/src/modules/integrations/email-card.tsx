@@ -13,10 +13,10 @@ import {
   type EmailSettingsInput,
 } from "@helpdesk/shared/api/integrations";
 import { CheckResultAlert } from "@/components/check-result";
-import { SecretField, initialSecret, secretPayload, type SecretValue } from "@/components/secret-field";
-import { ErrorState, LoadingState } from "@/components/states";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SecretField, initialSecret, secretPayload, type SecretValue } from "@meldgrove/ui/secret-field";
+import { ErrorState, LoadingState } from "@meldgrove/ui/states";
+import { Button } from "@meldgrove/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@meldgrove/ui/card";
 import {
   Field,
   FieldContent,
@@ -27,12 +27,12 @@ import {
   FieldLegend,
   FieldSet,
   FieldTitle,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { Spinner } from "@/components/ui/spinner";
+} from "@meldgrove/ui/field";
+import { Input } from "@meldgrove/ui/input";
+import { RadioGroup, RadioGroupItem } from "@meldgrove/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@meldgrove/ui/select";
+import { Separator } from "@meldgrove/ui/separator";
+import { Spinner } from "@meldgrove/ui/spinner";
 import { useMe } from "@/hooks/use-me";
 import { useT } from "@/i18n";
 import { common } from "@/i18n/common";

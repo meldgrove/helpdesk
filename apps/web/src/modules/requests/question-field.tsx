@@ -2,20 +2,13 @@ import type { Attachment } from "@helpdesk/shared/api/tickets";
 import { maxLengthOf, type AnswerValue, type Question } from "@helpdesk/shared/form";
 import { URGENCIES } from "@helpdesk/shared/tickets";
 import { AttachmentPicker } from "@/components/attachments";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-  FieldLegend,
-  FieldSet,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@meldgrove/ui/checkbox";
+import { Field, FieldDescription, FieldError, FieldLabel, FieldLegend, FieldSet } from "@meldgrove/ui/field";
+import { Input } from "@meldgrove/ui/input";
+import { Label } from "@meldgrove/ui/label";
+import { RadioGroup, RadioGroupItem } from "@meldgrove/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@meldgrove/ui/select";
+import { Textarea } from "@meldgrove/ui/textarea";
 import { useT } from "@/i18n";
 import { formMessages } from "./messages";
 

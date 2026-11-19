@@ -5,11 +5,11 @@ import { ListTodo, Plus } from "lucide-react";
 import type { TicketSummary } from "@helpdesk/shared/api/tickets";
 import { STATUSES } from "@helpdesk/shared/tickets";
 import { Page, PageHeader } from "@/components/layout/page";
-import { Pager } from "@/components/pager";
-import { EmptyState, ErrorState, LoadingState } from "@/components/states";
+import { Pager } from "@meldgrove/ui/pager";
+import { EmptyState, ErrorState, LoadingState } from "@meldgrove/ui/states";
 import { StatusBadge, UrgencyBadge } from "@/components/ticket-badges";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Button } from "@meldgrove/ui/button";
+import { Card } from "@meldgrove/ui/card";
 import {
   Select,
   SelectContent,
@@ -17,9 +17,9 @@ import {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+} from "@meldgrove/ui/select";
+import { Spinner } from "@meldgrove/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@meldgrove/ui/table";
 import { useT } from "@/i18n";
 import { useFormatter } from "@/lib/format";
 import { useStatusLabel } from "@/lib/labels";

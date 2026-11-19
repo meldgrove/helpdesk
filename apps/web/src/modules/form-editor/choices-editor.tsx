@@ -1,7 +1,7 @@
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import type { Question } from "@helpdesk/shared/form";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@meldgrove/ui/button";
+import { Input } from "@meldgrove/ui/input";
 import { useT } from "@/i18n";
 import { common } from "@/i18n/common";
 import {

@@ -17,7 +17,7 @@ import {
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
-} from "@/components/ui/sidebar";
+} from "@meldgrove/ui/sidebar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,10 +30,11 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
-import { TooltipProvider } from "@/components/ui/tooltip";
+} from "@meldgrove/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@meldgrove/ui/avatar";
+import { Separator } from "@meldgrove/ui/separator";
+import { TooltipProvider } from "@meldgrove/ui/tooltip";
+import { UpdateButton } from "@meldgrove/ui/updates";
 import { useHasRole, useMe } from "@/hooks/use-me";
 import { THEMES, useTheme, type Theme } from "@/lib/theme";
 import { authClient } from "@/lib/auth-client";
@@ -42,7 +43,7 @@ import { queryClient } from "@/lib/query";
 import { defineMessages, useT } from "@/i18n";
 import { NAVIGATION, navMessages } from "@/app/navigation";
 import { useRoleLabel } from "@/lib/labels";
-import { UpdateButton } from "@/modules/updates/update-button";
+import { SuperadminUpdates } from "@/modules/updates/updates";
 
 const messages = defineMessages({
   en: {
@@ -202,31 +203,33 @@ export function AppLayout() {
   }, [appName]);
 
   return (
-    <TooltipProvider delayDuration={300}>
-      <SidebarProvider>
-        <a
-          href="#main"
-          className="bg-background sr-only z-50 rounded-md px-3 py-2 focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
-        >
-          {m("skip")}
-        </a>
-        <AppSidebar appName={appName} />
-        <SidebarInset className="min-w-0">
-          <header className="bg-background/95 sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b px-4 backdrop-blur">
-            <SidebarTrigger className="-ml-1" />
-            <Separator orientation="vertical" className="mr-2 h-4" />
-            <span className="min-w-0 truncate text-sm font-medium">{appName}</span>
-            {superadmin ? (
-              <div className="ml-auto flex shrink-0 items-center">
-                <UpdateButton />
-              </div>
-            ) : null}
-          </header>
-          <main id="main" className="flex-1">
-            <Outlet />
-          </main>
-        </SidebarInset>
-      </SidebarProvider>
-    </TooltipProvider>
+    <SuperadminUpdates appName={appName}>
+      <TooltipProvider delayDuration={300}>
+        <SidebarProvider>
+          <a
+            href="#main"
+            className="bg-background sr-only z-50 rounded-md px-3 py-2 focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
+          >
+            {m("skip")}
+          </a>
+          <AppSidebar appName={appName} />
+          <SidebarInset className="min-w-0">
+            <header className="bg-background/95 sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b px-4 backdrop-blur">
+              <SidebarTrigger className="-ml-1" />
+              <Separator orientation="vertical" className="mr-2 h-4" />
+              <span className="min-w-0 truncate text-sm font-medium">{appName}</span>
+              {superadmin ? (
+                <div className="ml-auto flex shrink-0 items-center">
+                  <UpdateButton />
+                </div>
+              ) : null}
+            </header>
+            <main id="main" className="flex-1">
+              <Outlet />
+            </main>
+          </SidebarInset>
+        </SidebarProvider>
+      </TooltipProvider>
+    </SuperadminUpdates>
   );
 }

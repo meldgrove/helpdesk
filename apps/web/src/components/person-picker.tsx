@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronsUpDown, UserRound, UserX } from "lucide-react";
 import type { Person } from "@helpdesk/shared/api/users";
-import { Button } from "@/components/ui/button";
+import { Button } from "@meldgrove/ui/button";
 import {
   Command,
   CommandEmpty,
@@ -10,12 +10,12 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+} from "@meldgrove/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@meldgrove/ui/popover";
 import { useDebounced } from "@/hooks/use-debounced";
 import { api } from "@/lib/api";
 import { defineMessages, useT } from "@/i18n";
-import { cn } from "@/lib/utils";
+import { cn } from "@meldgrove/ui/utils";
 
 const messages = defineMessages({
   en: { search: "Search people…", empty: "No one found", nobody: "Nobody", choose: "Choose a person" },

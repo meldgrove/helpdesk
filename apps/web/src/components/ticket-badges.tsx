@@ -1,8 +1,8 @@
 import { ArrowDown, ArrowUp, ChevronsUp, Minus } from "lucide-react";
 import type { Status, Urgency } from "@helpdesk/shared/tickets";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@meldgrove/ui/badge";
 import { useStatusLabel, useUrgencyLabel } from "@/lib/labels";
-import { cn } from "@/lib/utils";
+import { cn } from "@meldgrove/ui/utils";
 
 const STATUS_STYLE: Record<Status, string> = {
   new: "bg-sky-500/15 text-sky-700 border-sky-500/30 dark:text-sky-300",
