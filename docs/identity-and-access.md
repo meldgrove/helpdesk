@@ -30,7 +30,8 @@ Register a client at the provider with this redirect URL:
 ```
 
 and set `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The
-provider must return the email address (scopes `openid email profile`). Its
+provider must return an ID token and the email address (scopes `openid email
+profile`). Helpdesk keeps the account tied to the same provider subject. Its
 discovery document must include `issuer` and `jwks_uri` so the app can verify
 ID tokens.
 

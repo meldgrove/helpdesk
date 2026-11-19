@@ -18,7 +18,7 @@ async function signedIn(email: string, claims: Record<string, unknown>, subject 
   await getDb()
     .insert(accounts)
     .values({ accountId: subject, providerId: "oidc", userId: user.id, idToken: idToken(claims) });
-  return user;
+  return { ...user, tokens: { idToken: idToken({ ...claims, sub: subject }) } };
 }
 
 const roleOf = async (id: string) => (await getDb().select().from(users).where(eq(users.id, id)))[0]!;
@@ -40,7 +40,7 @@ describe("roles at sign-in from the groups claim (DIRECTORY=oidc)", () => {
     const operator = await signedIn("op@example.org", {
       groups: ["/helpdesk/employees", "/helpdesk/operators/it"],
     });
-    expect(await refreshAccessAtSignIn(operator.id)).toBe("operator");
+    expect(await refreshAccessAtSignIn(operator.id, operator.tokens)).toBe("operator");
     expect(await roleOf(operator.id)).toMatchObject({
       role: "operator",
       roleSource: "sign_in",
@@ -48,7 +48,7 @@ describe("roles at sign-in from the groups claim (DIRECTORY=oidc)", () => {
     });
 
     const outsider = await signedIn("out@example.org", { groups: ["/marketing"] }, "subject-2");
-    expect(await refreshAccessAtSignIn(outsider.id)).toBeNull();
+    expect(await refreshAccessAtSignIn(outsider.id, outsider.tokens)).toBeNull();
     expect((await roleOf(outsider.id)).role).toBeNull();
   });
 
@@ -56,12 +56,12 @@ describe("roles at sign-in from the groups claim (DIRECTORY=oidc)", () => {
     process.env.OIDC_GROUPS_CLAIM = "realm_access.roles";
     resetConfigForTests();
     const admin = await signedIn("admin@example.org", { realm_access: { roles: ["helpdesk/admins"] } });
-    expect(await refreshAccessAtSignIn(admin.id)).toBe("admin");
+    expect(await refreshAccessAtSignIn(admin.id, admin.tokens)).toBe("admin");
   });
 
   it("uses UserInfo groups only for the signed-in subject", async () => {
     const user = await signedIn("op@example.org", {});
-    await getDb().update(accounts).set({ accessToken: "test-token" }).where(eq(accounts.userId, user.id));
+    const tokens = { ...user.tokens, accessToken: "test-token" };
     const issuer = process.env.OIDC_ISSUER!;
     let subject = "subject-1";
     vi.stubGlobal(
@@ -74,14 +74,23 @@ describe("roles at sign-in from the groups claim (DIRECTORY=oidc)", () => {
       }),
     );
 
-    expect(await refreshAccessAtSignIn(user.id)).toBe("operator");
+    expect(await refreshAccessAtSignIn(user.id, tokens)).toBe("operator");
     subject = "different-subject";
-    expect(await refreshAccessAtSignIn(user.id)).toBeNull();
+    expect(await refreshAccessAtSignIn(user.id, tokens)).toBeNull();
+  });
+
+  it("requires a current ID token and keeps an existing subject binding", async () => {
+    const user = await signedIn("op@example.org", { groups: ["helpdesk/operators"] });
+    expect(await refreshAccessAtSignIn(user.id, {})).toBeNull();
+    expect(await refreshAccessAtSignIn(user.id, user.tokens)).toBe("operator");
+    const other = { idToken: idToken({ sub: "other", groups: ["helpdesk/superadmins"] }) };
+    expect(await refreshAccessAtSignIn(user.id, other)).toBeNull();
+    expect((await roleOf(user.id)).role).toBe("operator");
   });
 
   it("always lets SUPERADMIN_EMAILS in", async () => {
     const root = await signedIn("root@example.org", { groups: [] });
-    expect(await refreshAccessAtSignIn(root.id)).toBe("superadmin");
+    expect(await refreshAccessAtSignIn(root.id, root.tokens)).toBe("superadmin");
   });
 });
 
@@ -109,7 +118,7 @@ describe("Keycloak (DIRECTORY=keycloak)", () => {
   it("reads the person's groups at sign-in", async () => {
     setKeycloakClientForTests(fakeKeycloak({}, { "kc-1": ["/helpdesk/superadmins"] }));
     const user = await signedIn("ada@example.org", {}, "kc-1");
-    expect(await refreshAccessAtSignIn(user.id)).toBe("superadmin");
+    expect(await refreshAccessAtSignIn(user.id, user.tokens)).toBe("superadmin");
     expect((await roleOf(user.id)).roleSource).toBe("directory");
   });
 
@@ -119,8 +128,8 @@ describe("Keycloak (DIRECTORY=keycloak)", () => {
       userGroups: async () => Promise.reject(new Error("down")),
     });
     const user = await signedIn("op@example.org", {}, "kc-2");
-    await getDb().update(users).set({ role: "operator" }).where(eq(users.id, user.id));
-    expect(await refreshAccessAtSignIn(user.id)).toBe("operator");
+    await getDb().update(users).set({ role: "operator", directoryId: "kc-2" }).where(eq(users.id, user.id));
+    expect(await refreshAccessAtSignIn(user.id, user.tokens)).toBe("operator");
   });
 
   it("syncs everyone in the groups and removes roles of people who left", async () => {

@@ -7,7 +7,7 @@ import { getDb } from "../db/client";
 import { accounts, authRateLimits, sessions, users, verifications } from "../db/schema";
 import { CLIENT_IP_HEADER } from "../http/client-ip";
 import { logger } from "../logger";
-import { refreshAccessAtSignIn } from "../directory/sign-in";
+import { refreshAccessAtSignIn, type SignInTokens } from "../directory/sign-in";
 
 export const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
 
@@ -19,6 +19,10 @@ export const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
 function createAuth() {
   const settings = config();
   const appUrl = new URL(settings.APP_URL);
+  const callbackTokens = new WeakMap<Request, SignInTokens>();
+  const rememberTokens = async (tokens: SignInTokens, context: { request?: Request } | null) => {
+    if (context?.request) callbackTokens.set(context.request, tokens);
+  };
   return betterAuth({
     appName: settings.APP_NAME,
     baseURL: settings.APP_URL,
@@ -101,11 +105,19 @@ function createAuth() {
       }),
     ],
     databaseHooks: {
+      account: {
+        // The before hooks see the current exchange, even when the database
+        // keeps a token omitted from the new exchange.
+        create: { before: rememberTokens },
+        update: { before: rememberTokens },
+      },
       session: {
         create: {
           // Roles follow the groups at every sign-in; no role, no session.
-          before: async (session) => {
-            const role = await refreshAccessAtSignIn(session.userId);
+          before: async (session, context) => {
+            const tokens = context?.request && callbackTokens.get(context.request);
+            if (!tokens) return false;
+            const role = await refreshAccessAtSignIn(session.userId, tokens);
             if (!role) return false;
             return { data: session };
           },
