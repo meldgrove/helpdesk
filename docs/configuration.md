@@ -66,13 +66,13 @@ for an empty value too.
 
 ## Docker Compose
 
-| Variable                                                                                       | Description                                                        |
-| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `HELPDESK_VERSION`                                                                             | The release to run, e.g. `0.1.0`, or a series tag such as `0.1`.   |
-| `HELPDESK_PORT`                                                                                | Host port of `web` (default `3000`).                               |
-| `PULL_POLICY`                                                                                  | `always` to pull the image at every start.                         |
-| `POSTGRES_PASSWORD`                                                                            | With `compose.postgres.yaml`.                                      |
-| `UPDATE_DEPLOY_HOOK_URL`, `UPDATE_DEPLOY_HOOK_TOKEN`, `UPDATE_COOLDOWN`, `UPDATE_WINDOW`, `TZ` | Automatic updates ([Deployment](deployment.md#automatic-updates)). |
+| Variable                                             | Description                                                                                                                               |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `HELPDESK_VERSION`                                   | The release to run, e.g. `0.1.0`, or a series tag such as `0.1`. With automatic updates, the server writes each version it installs here. |
+| `HELPDESK_PORT`                                      | Host port of `web` on `127.0.0.1` (default `3000`), for the reverse proxy.                                                                |
+| `POSTGRES_PASSWORD`                                  | With `compose.postgres.yaml`.                                                                                                             |
+| `UPDATE_COOLDOWN`, `UPDATE_WINDOW`, `TZ`             | Automatic updates ([Deployment](deployment.md#automatic-updates)).                                                                        |
+| `UPDATE_DEPLOY_HOOK_URL`, `UPDATE_DEPLOY_HOOK_TOKEN` | Coolify only: its deploy link and token ([Coolify](coolify.md#automatic-updates)).                                                        |
 
 ## Tests only
 
