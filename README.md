@@ -51,6 +51,7 @@ Mailpit at http://localhost:8028 once a superadmin sets up SMTP
 - [Configuration](docs/configuration.md): every environment variable.
 - [Identity and access](docs/identity-and-access.md): roles, Keycloak and
   other providers.
-- [Admin guide](docs/admin-guide.md): the form, categories, email and Slack.
+- [Admin guide](docs/admin-guide.md): the form, categories, email, Slack and
+  updates.
 - [Architecture](docs/architecture.md): how it works inside.
 - [Contributing](CONTRIBUTING.md): development setup, checks, releases.

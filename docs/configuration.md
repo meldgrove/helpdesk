@@ -49,6 +49,7 @@ See [Identity and access](identity-and-access.md).
 | `DATABASE_POOL_SIZE`    | `10`                                 | Database connections per process.                                                                 |
 | `LOG_LEVEL`             | `info`                               | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`.                                   |
 | `WORKER_HEARTBEAT_FILE` | `/tmp/worker-heartbeat` in the image | The worker touches it for health checks.                                                          |
+| `UPDATER_URL`           | `http://updater:8080`                | The updater, for the update button ([Deployment](deployment.md#automatic-updates)); empty: off.   |
 
 ## Sentry
 

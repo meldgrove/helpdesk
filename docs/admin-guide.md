@@ -1,7 +1,7 @@
 # Admin guide
 
-For admins and superadmins: the request form, categories, email, Slack and
-people. Roles come from the sign-in provider's groups
+For admins and superadmins: the request form, categories, email, Slack,
+people and updates. Roles come from the sign-in provider's groups
 ([Identity and access](identity-and-access.md)).
 
 ## First steps
@@ -104,7 +104,24 @@ it came from (directory sync, sign-in or `SUPERADMIN_EMAILS`). Roles change
 in the sign-in provider, not here. With Keycloak, superadmins can check the
 connection and sync now.
 
+## Updates (superadmins)
+
+The update icon in the header shows whether the helpdesk is up to date. A
+dot means an update is available: click it for the changes, the release
+notes and when it installs automatically, or install it now. The helpdesk
+restarts for a moment and the page reloads when it is back. A release that
+needs upgrade steps waits for you: take the steps from its release notes on
+the server first. When an update fails, the icon turns into a warning with
+the reason, and the version before keeps running.
+
+**Administration → Updates** shows the installed version and when updates
+install, and sets the channel: **Stable** (releases) or **Preview** (every
+change before it is released; new features first, and now and then a new
+bug). Switching back to Stable keeps the preview until a release is newer.
+Setting up the update service: [Deployment](deployment.md#automatic-updates).
+
 ## Audit log
 
 Superadmins see who changed the form, categories, email, Slack and the
-directory sync, and when. It never holds passwords or tokens.
+directory sync, who installed updates or changed their channel, and when.
+It never holds passwords or tokens.

@@ -90,9 +90,18 @@ checks the role on every request.
 
 `apps/web/src/modules/<area>` holds each area's routes, pages, queries and
 texts (`requests`, `board`, `tickets`, `form-editor`, `people`,
-`integrations`, `audit`, `profile`). `routes/app.tsx` loads the signed-in
+`integrations`, `audit`, `updates`, `profile`). `routes/app.tsx` loads the signed-in
 person and gates pages by role (`requireRole`); the server checks access
 again on every request.
+
+## Updates
+
+The `updater` service of `compose.yaml` (the Meldgrove Updater) finds and
+installs new versions. `modules/updates.ts` passes the superadmins' requests
+to its API at `UPDATER_URL` (`updates/client.ts`, with timeouts) and answers
+with its status; the update button (`modules/updates/update-button.tsx`)
+derives what to show from that status (`state.ts`) and follows an
+installation through the restart.
 
 ## Sentry
 
