@@ -54,7 +54,6 @@ router.get("/attachments/:id", async (c) => {
   c.header("content-length", String(row.size));
   c.header("content-disposition", `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`);
   c.header("x-content-type-options", "nosniff");
-  c.header("cache-control", "private, no-store");
   return c.body(Readable.toWeb(readStoredFile(row)) as ReadableStream);
 });
 

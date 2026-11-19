@@ -76,6 +76,14 @@ export function createApp() {
 
   app.route("/", health);
 
+  // API responses can contain session or ticket data, including on redirects and errors.
+  app.use("/api/*", async (c, next) => {
+    await next();
+    c.header("cache-control", "private, no-store");
+  });
+
+  const jsonLimit = bodyLimit({ maxSize: 512 * 1024 });
+  app.post("/api/auth/*", jsonLimit);
   app.on(["GET", "POST"], "/api/auth/*", (c) => {
     // Replace any client-supplied value with the address the app trusts.
     const headers = new Headers(c.req.raw.headers);
@@ -94,12 +102,11 @@ export function createApp() {
 
   const api = new Hono<AppEnv>();
   const uploadLimit = bodyLimit({ maxSize: MAX_ATTACHMENT_BYTES + 64 * 1024 });
-  const jsonLimit = bodyLimit({ maxSize: 512 * 1024 });
   api.use(
     "*",
-    (c, next) =>
-      (c.req.method === "POST" && c.req.path.endsWith("/attachments") ? uploadLimit : jsonLimit)(c, next),
     sameOrigin,
+    (c, next) =>
+      (c.req.method === "POST" && c.req.path === "/api/v1/attachments" ? uploadLimit : jsonLimit)(c, next),
     authenticate,
   );
   for (const module of API_MODULES) api.route("/", module);
