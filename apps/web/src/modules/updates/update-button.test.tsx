@@ -213,11 +213,34 @@ describe("UpdateButton", () => {
   });
 
   it("says when updates are off", async () => {
-    routeFetch(() => ({ body: answer(status({ mode: "off", automatic: false })) }));
+    routeFetch(() => ({ body: answer(status({ mode: "off", automatic: false, available: null })) }));
     renderButton();
     expect(
       await screen.findByRole("button", { name: "Automatic updates are off on this server" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows an update while updates are off, without installing it", async () => {
+    routeFetch(() => ({ body: answer(status({ mode: "off", automatic: false })) }));
+    renderButton();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Update available · 0.2.1" }));
+    const popover = await screen.findByRole("dialog");
+    expect(within(popover).getByText("Fix the board filters")).toBeInTheDocument();
+    expect(within(popover).getByRole("link", { name: /Release notes/ })).toBeInTheDocument();
+    expect(within(popover).queryByRole("button", { name: "Install now" })).toBeNull();
+    expect(
+      within(popover).getByText(
+        (_, element) =>
+          element?.tagName === "P" &&
+          element.textContent ===
+            "Automatic updates are off on this server, so it cannot install from here. See the deployment guide.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(popover).getByRole("link", { name: "deployment guide" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("docs/deployment.md"),
+    );
   });
 
   it("keeps waiting for an installation after a reload", async () => {

@@ -179,10 +179,13 @@ describe("buttonState", () => {
     expect(state(response(status({ available, last })))?.kind).toBe("available");
   });
 
-  it("is off when the server installs nothing", () => {
-    expect(state(response(status({ mode: "off", automatic: false, available: update() })))).toEqual({
-      kind: "off",
-    });
+  it("still shows what is new when the server installs nothing", () => {
+    const off = { mode: "off", automatic: false } as const;
+    expect(state(response(status({ ...off, available: update() })))?.kind).toBe("available");
+    expect(state(response(status({ ...off, attention: update({ version: "0.3.0" }) })))?.kind).toBe(
+      "attention",
+    );
+    expect(state(response(status(off)))).toEqual({ kind: "off" });
   });
 
   it("is unreachable without an updater", () => {

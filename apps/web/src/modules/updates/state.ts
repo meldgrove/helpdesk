@@ -65,7 +65,6 @@ export function buttonState(input: {
   if (input.checking || status?.checking) return { kind: "checking" };
   if (!data) return input.loadFailed ? { kind: "unreachable" } : null;
   if (!status) return { kind: "unreachable" };
-  if (status.mode === "off") return { kind: "off" };
 
   const failedUpdate = status.available?.failed
     ? status.available
@@ -82,6 +81,8 @@ export function buttonState(input: {
   }
   if (status.available) return { kind: "available", update: status.available };
   if (status.attention) return { kind: "attention", update: status.attention };
+  // Mode off still shows what is new (without installing); "off" only when nothing is.
+  if (status.mode === "off") return { kind: "off" };
   return { kind: "up-to-date", installed: status.installed ?? data.app.version };
 }
 

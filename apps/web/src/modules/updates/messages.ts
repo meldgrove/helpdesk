@@ -46,6 +46,8 @@ export const messages = defineMessages({
     checked: "Checked {time}",
     checkNow: "Check now",
     off: "Automatic updates are off on this server",
+    offCannotInstall:
+      "Automatic updates are off on this server, so it cannot install from here. See the {guide}.",
     unreachable: "No update service. See the deployment guide.",
     checkFailed: "The check failed: {error}",
 

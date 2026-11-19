@@ -44,7 +44,7 @@ function statusText(data: UpdatesResponse, t: Translate): string {
     case "available":
       return t("availableVersion", { version: state.update.version });
     default:
-      // Checking, or off: still name an update the updater found.
+      // Checking: still name an update the updater found.
       return status?.available
         ? t("availableVersion", { version: status.available.version })
         : status?.attention

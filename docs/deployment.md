@@ -170,8 +170,10 @@ Superadmins see an update icon in the header: a click checks for updates; a
 dot means an update is available, with its changes, its release notes, when
 it installs, and **Install now**. While it installs, the icon shows the
 progress, and the page reloads when the helpdesk is back; when an update
-fails, it shows why. **Administration → Updates** shows the installed
-version and sets the channel. The app reaches the updater at `UPDATER_URL`
+fails, it shows why. With automatic updates off on the server, the icon
+still shows new releases, but nothing installs from the app.
+**Administration → Updates** shows the installed version and sets the
+channel. The app reaches the updater at `UPDATER_URL`
 (default `http://updater:8080`); without it, the icon says "No update
 service". The updater's API has no authentication: never publish its port.
 

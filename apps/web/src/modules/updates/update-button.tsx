@@ -15,6 +15,7 @@ import { useFormatter } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { fetchUpdates, updatesKey, useCheckUpdates, useInstallUpdate, useUpdates } from "./api";
 import { messages } from "./messages";
+import { DEPLOYMENT_GUIDE_URL } from "./updates-page";
 import {
   buttonState,
   hasPopover,
@@ -171,7 +172,27 @@ function Title({ children }: { children: ReactNode }) {
   return <h2 className="font-medium break-words">{children}</h2>;
 }
 
-function AvailableView({ update, onInstall }: { update: Update; onInstall: () => void }) {
+/** In mode off, in place of the install buttons: nothing can install from here. */
+function OffNote() {
+  const t = useT(messages);
+  const [before, after] = t("offCannotInstall").split("{guide}");
+  return (
+    <p className="text-muted-foreground text-sm">
+      {before}
+      <a
+        href={DEPLOYMENT_GUIDE_URL}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="text-primary underline-offset-4 hover:underline"
+      >
+        {t("deploymentGuide")}
+      </a>
+      {after}
+    </p>
+  );
+}
+
+function AvailableView({ update, onInstall }: { update: Update; onInstall: (() => void) | null }) {
   const t = useT(messages);
   const format = useFormatter();
   const { notes, more } = visibleNotes(update);
@@ -206,23 +227,31 @@ function AvailableView({ update, onInstall }: { update: Update; onInstall: () =>
       ) : null}
       {update.url ? <ReleaseNotesLink url={update.url} /> : null}
       {installsAt ? <p className="text-muted-foreground text-sm">{installsAt}</p> : null}
-      <Button size="sm" onClick={onInstall}>
-        {t("installNow")}
-      </Button>
+      {onInstall ? (
+        <Button size="sm" onClick={onInstall}>
+          {t("installNow")}
+        </Button>
+      ) : (
+        <OffNote />
+      )}
     </div>
   );
 }
 
-function AttentionView({ update, onInstall }: { update: Update; onInstall: () => void }) {
+function AttentionView({ update, onInstall }: { update: Update; onInstall: (() => void) | null }) {
   const t = useT(messages);
   return (
     <div className="grid gap-3">
       <Title>{t("needsSteps", { version: update.version })}</Title>
       <p className="text-muted-foreground text-sm">{t("needsStepsText")}</p>
       {update.url ? <ReleaseNotesLink url={update.url} /> : null}
-      <Button size="sm" variant="outline" onClick={onInstall}>
-        {t("installAnyway")}
-      </Button>
+      {onInstall ? (
+        <Button size="sm" variant="outline" onClick={onInstall}>
+          {t("installAnyway")}
+        </Button>
+      ) : (
+        <OffNote />
+      )}
     </div>
   );
 }
@@ -231,7 +260,7 @@ function FailedView(props: {
   update: Update;
   message: string | null;
   running: string | null;
-  onRetry: () => void;
+  onRetry: (() => void) | null;
 }) {
   const t = useT(messages);
   return (
@@ -243,9 +272,13 @@ function FailedView(props: {
       {props.running ? (
         <p className="text-muted-foreground text-sm">{t("stillRunning", { version: props.running })}</p>
       ) : null}
-      <Button size="sm" onClick={props.onRetry}>
-        {t("tryAgain")}
-      </Button>
+      {props.onRetry ? (
+        <Button size="sm" onClick={props.onRetry}>
+          {t("tryAgain")}
+        </Button>
+      ) : (
+        <OffNote />
+      )}
     </div>
   );
 }
@@ -342,6 +375,8 @@ export function UpdateButton() {
   const status = data?.reachable ? data.updater : null;
   const installed = status?.installed ?? data?.app.version ?? null;
   const popover = hasPopover(state);
+  // Mode off: the popover shows the update, but nothing can install from here.
+  const installable = status?.mode !== "off";
   const label = tooltip(state, t);
 
   const runCheck = () =>
@@ -409,15 +444,25 @@ export function UpdateButton() {
         </Tooltip>
         <PopoverContent align="end" className="w-80 max-w-[calc(100vw-2rem)]">
           {state.kind === "available" ? (
-            <AvailableView update={state.update} onInstall={() => ask(state.update, false)} />
+            <AvailableView
+              update={state.update}
+              onInstall={installable ? () => ask(state.update, false) : null}
+            />
           ) : state.kind === "attention" ? (
-            <AttentionView update={state.update} onInstall={() => ask(state.update, true)} />
+            <AttentionView
+              update={state.update}
+              onInstall={installable ? () => ask(state.update, true) : null}
+            />
           ) : state.kind === "failed" ? (
             <FailedView
               update={state.update}
               message={state.message}
               running={installed}
-              onRetry={() => ask(state.update, status?.attention?.version === state.update.version)}
+              onRetry={
+                installable
+                  ? () => ask(state.update, status?.attention?.version === state.update.version)
+                  : null
+              }
             />
           ) : state.kind === "installing" ? (
             <InstallingView
