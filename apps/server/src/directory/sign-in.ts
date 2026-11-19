@@ -1,4 +1,4 @@
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, or, sql, TransactionRollbackError } from "drizzle-orm";
 import { roleSchema, type Role } from "@helpdesk/shared/roles";
 import { config } from "../config";
 import { getDb } from "../db/client";
@@ -123,24 +123,39 @@ export async function refreshAccessAtSignIn(userId: string, tokens: SignInTokens
       : null;
   }
 
-  // Do not let concurrent sign-ins bind one local user to different subjects.
-  const [updated] = await db
-    .update(users)
-    .set({
-      role,
-      roleSource: role
-        ? environmentSuperadmin
-          ? "environment"
-          : keycloakMode
-            ? "directory"
-            : "sign_in"
-        : null,
-      roleCheckedAt: sql`now()`,
-      directoryId: subject,
-      updatedAt: sql`now()`,
+  const updated = await db
+    .transaction(async (tx) => {
+      // The provider's subject moved to this person (e.g. their email changed):
+      // the older entry loses the binding and its role.
+      await tx
+        .update(users)
+        .set({ directoryId: null, role: null, roleSource: null, updatedAt: sql`now()` })
+        .where(and(eq(users.directoryId, subject), ne(users.id, userId)));
+      // Do not let concurrent sign-ins bind one local user to different subjects.
+      const [row] = await tx
+        .update(users)
+        .set({
+          role,
+          roleSource: role
+            ? environmentSuperadmin
+              ? "environment"
+              : keycloakMode
+                ? "directory"
+                : "sign_in"
+            : null,
+          roleCheckedAt: sql`now()`,
+          directoryId: subject,
+          updatedAt: sql`now()`,
+        })
+        .where(and(eq(users.id, userId), or(isNull(users.directoryId), eq(users.directoryId, subject))))
+        .returning({ id: users.id });
+      if (!row) tx.rollback();
+      return row;
     })
-    .where(and(eq(users.id, userId), or(isNull(users.directoryId), eq(users.directoryId, subject))))
-    .returning({ id: users.id });
+    .catch((error: unknown) => {
+      if (error instanceof TransactionRollbackError) return undefined;
+      throw error;
+    });
   if (!updated) return null;
   logger.info({ userId, role: role ?? "none" }, "access checked at sign-in");
   return role;

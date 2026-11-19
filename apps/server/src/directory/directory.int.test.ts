@@ -96,6 +96,16 @@ describe("roles at sign-in from the groups claim (DIRECTORY=oidc)", () => {
     expect((await roleOf(user.id)).role).toBe("operator");
   });
 
+  it("moves the subject to the person who signs in with it", async () => {
+    const before = await signedIn("old@example.org", { groups: ["helpdesk/operators"] });
+    expect(await refreshAccessAtSignIn(before.id, before.tokens)).toBe("operator");
+    // The provider changed the address: Better Auth creates a new entry.
+    const after = await signedIn("new@example.org", { groups: ["helpdesk/operators"] });
+    expect(await refreshAccessAtSignIn(after.id, after.tokens)).toBe("operator");
+    expect(await roleOf(after.id)).toMatchObject({ role: "operator", directoryId: "subject-1" });
+    expect(await roleOf(before.id)).toMatchObject({ role: null, directoryId: null });
+  });
+
   it("always lets SUPERADMIN_EMAILS in", async () => {
     const root = await signedIn("root@example.org", { groups: [] });
     expect(await refreshAccessAtSignIn(root.id, root.tokens)).toBe("superadmin");
