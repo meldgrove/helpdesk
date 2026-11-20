@@ -79,6 +79,22 @@ describe("SlackForm", () => {
     expect(puts(fetch)).toEqual([]);
   });
 
+  it("hides the bot token until the eye button shows it", async () => {
+    routeFetch({ "GET /api/v1/integrations/slack/channels": { body: { items: [] } } });
+    renderWithProviders(<SlackForm settings={{ ...connected, configured: false, botTokenHint: null }} />);
+
+    const input = screen.getByLabelText("Bot token");
+    await userEvent.type(input, "xoxb-example");
+    expect(input).toHaveAttribute("type", "password");
+
+    await userEvent.click(screen.getByRole("button", { name: "Show" }));
+    expect(input).toHaveAttribute("type", "text");
+    expect(input).toHaveValue("xoxb-example");
+
+    await userEvent.click(screen.getByRole("button", { name: "Hide" }));
+    expect(input).toHaveAttribute("type", "password");
+  });
+
   it("disconnects after confirming", async () => {
     const fetch = routeFetch({
       "GET /api/v1/integrations/slack/channels": {
