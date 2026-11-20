@@ -20,7 +20,11 @@ import { SuperadminUpdates } from "@/modules/updates/updates";
 const DEFAULT_APP_NAME = "Helpdesk";
 
 /** TanStack Router's link for the frame: every other prop goes on to the <a>. */
-const AppLink: FrameLink = ({ href, ...props }) => <Link to={href} {...props} />;
+// `exact`: otherwise TanStack marks every link the address starts with as the current page
+// (breadcrumb parents, the sidebar's sections).
+const AppLink: FrameLink = ({ href, ...props }) => (
+  <Link to={href} activeOptions={{ exact: true }} {...props} />
+);
 
 /** The signed-in application frame: @meldgrove/ui's AppFrame with Helpdesk's navigation. */
 export function AppLayout() {
