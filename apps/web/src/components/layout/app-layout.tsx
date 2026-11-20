@@ -1,79 +1,72 @@
-import { Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { Link, Outlet, useRouter, useRouterState } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { ChevronsUpDown, LifeBuoy, LogOut, Settings, SunMoon } from "lucide-react";
-import { hasRole } from "@helpdesk/shared/roles";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarRail,
-  SidebarTrigger,
-} from "@meldgrove/ui/sidebar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@meldgrove/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@meldgrove/ui/avatar";
-import { Separator } from "@meldgrove/ui/separator";
-import { TooltipProvider } from "@meldgrove/ui/tooltip";
+import { LifeBuoy } from "lucide-react";
+import { hasRole, isStaff } from "@helpdesk/shared/roles";
+import type { TicketSummary } from "@helpdesk/shared/api/tickets";
+import { AppFrame, type FrameLink, type NavGroup, type SearchResult } from "@meldgrove/ui/app-frame";
 import { UpdateButton } from "@meldgrove/ui/updates";
 import { useHasRole, useMe } from "@/hooks/use-me";
-import { THEMES, useTheme, type Theme } from "@/lib/theme";
+import { useTheme } from "@/lib/theme";
+import { api } from "@/lib/api";
 import { authClient } from "@/lib/auth-client";
 import { useAuthConfig } from "@/lib/auth-config";
 import { queryClient } from "@/lib/query";
-import { defineMessages, useT } from "@/i18n";
-import { NAVIGATION, navMessages } from "@/app/navigation";
-import { useRoleLabel } from "@/lib/labels";
+import { useT } from "@/i18n";
+import { breadcrumbsFor, NAVIGATION, navMessages } from "@/app/navigation";
+import { useRoleLabel, useStatusLabel } from "@/lib/labels";
+import { messages as settingsMessages } from "@/modules/profile/messages";
 import { SuperadminUpdates } from "@/modules/updates/updates";
-
-const messages = defineMessages({
-  en: {
-    signOut: "Sign out",
-    skip: "Skip to content",
-    theme: "Appearance",
-    system: "Device setting",
-    light: "Light",
-    dark: "Dark",
-    settings: "My settings",
-  },
-});
 
 const DEFAULT_APP_NAME = "Helpdesk";
 
-export function initials(name: string) {
-  return name
-    .split(/[\s@.]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]!.toUpperCase())
-    .join("");
-}
+/** TanStack Router's link for the frame: every other prop goes on to the <a>. */
+const AppLink: FrameLink = ({ href, ...props }) => <Link to={href} {...props} />;
 
-function UserMenu() {
+/** The signed-in application frame: @meldgrove/ui's AppFrame with Helpdesk's navigation. */
+export function AppLayout() {
   const me = useMe();
-  const m = useT(messages);
-  const { theme, setTheme } = useTheme();
+  const t = useT(navMessages);
+  const ts = useT(settingsMessages);
+  const router = useRouter();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const superadmin = useHasRole("superadmin");
   const roleLabel = useRoleLabel();
-  const label = me.name || me.email;
+  const statusLabel = useStatusLabel();
+  const { theme, setTheme } = useTheme();
+  const appName = useAuthConfig()?.appName || DEFAULT_APP_NAME;
+  useEffect(() => {
+    document.title = appName;
+  }, [appName]);
+
+  const nav: NavGroup[] = NAVIGATION.filter((group) => hasRole(me.role, group.role)).map((group) => ({
+    label: t(group.key),
+    items: group.items
+      .filter((item) => !item.role || hasRole(me.role, item.role))
+      .map((item) => ({ label: t(item.key), href: item.to, shortcut: item.shortcut })),
+  }));
+  const breadcrumbs =
+    pathname === "/settings"
+      ? [{ label: ts("title") }]
+      : breadcrumbsFor(
+          pathname,
+          nav.flatMap((group) => group.items),
+          { newTicket: t("newTicket"), newRequest: t("newRequest") },
+        );
+
+  // Staff find tickets by number or text; requesters find the pages.
+  const findTickets = async (query: string, signal: AbortSignal): Promise<SearchResult[]> => {
+    const { items } = await api.get<{ items: TicketSummary[] }>(
+      "/tickets",
+      { q: query, status: "all", limit: 8 },
+      signal,
+    );
+    return items.map((ticket) => ({
+      href: `/tickets/${ticket.number}`,
+      title: ticket.title,
+      reference: `#${ticket.number}`,
+      kind: statusLabel(ticket.status),
+    }));
+  };
 
   const signOut = async () => {
     await authClient.signOut();
@@ -82,154 +75,31 @@ function UserMenu() {
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <SidebarMenuButton size="lg">
-          <Avatar className="size-8 rounded-lg">
-            {me.image ? <AvatarImage src={me.image} alt="" /> : null}
-            <AvatarFallback className="rounded-lg">{initials(label)}</AvatarFallback>
-          </Avatar>
-          <div className="grid flex-1 text-left text-sm leading-tight">
-            <span className="truncate font-medium">{label}</span>
-            <span className="text-muted-foreground truncate text-xs">{me.email}</span>
-          </div>
-          <ChevronsUpDown className="ml-auto size-4" />
-        </SidebarMenuButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" className="w-60">
-        <DropdownMenuLabel className="font-normal">
-          <div className="truncate text-sm font-medium">{label}</div>
-          <div className="text-muted-foreground truncate text-xs">
-            {me.email} · {roleLabel(me.role)}
-          </div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <SunMoon />
-            {m("theme")}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuRadioGroup value={theme} onValueChange={(value) => setTheme(value as Theme)}>
-              {THEMES.map((option) => (
-                <DropdownMenuRadioItem key={option} value={option}>
-                  {m(option)}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuItem asChild>
-          <Link to="/settings">
-            <Settings />
-            {m("settings")}
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => void signOut()}>
-          <LogOut />
-          {m("signOut")}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function AppSidebar({ appName }: { appName: string }) {
-  const me = useMe();
-  const t = useT(navMessages);
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const isActive = (to: string) =>
-    to === "/" ? pathname === "/" : pathname === to || pathname.startsWith(`${to}/`);
-
-  return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <Link to="/">
-                <div className="bg-primary text-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                  <LifeBuoy className="size-4" />
-                </div>
-                <span className="truncate font-semibold">{appName}</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
-      <SidebarContent>
-        {NAVIGATION.filter((group) => hasRole(me.role, group.role)).map((group) => (
-          <SidebarGroup key={group.key}>
-            <SidebarGroupLabel>{t(group.key)}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {group.items
-                  .filter((item) => !item.role || hasRole(me.role, item.role))
-                  .map((item) => (
-                    <SidebarMenuItem key={item.key}>
-                      <SidebarMenuButton asChild isActive={isActive(item.to)} tooltip={t(item.key)}>
-                        <Link to={item.to}>
-                          <item.icon />
-                          <span>{t(item.key)}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
-      </SidebarContent>
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <UserMenu />
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
-      <SidebarRail />
-    </Sidebar>
-  );
-}
-
-/** The signed-in application frame: sidebar, header and the page. */
-export function AppLayout() {
-  const m = useT(messages);
-  const superadmin = useHasRole("superadmin");
-  const appName = useAuthConfig()?.appName || DEFAULT_APP_NAME;
-  useEffect(() => {
-    document.title = appName;
-  }, [appName]);
-
-  return (
     <SuperadminUpdates appName={appName}>
-      <TooltipProvider delayDuration={300}>
-        <SidebarProvider>
-          <a
-            href="#main"
-            className="bg-background sr-only z-50 rounded-md px-3 py-2 focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
-          >
-            {m("skip")}
-          </a>
-          <AppSidebar appName={appName} />
-          <SidebarInset className="min-w-0">
-            <header className="bg-background/95 sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b px-4 backdrop-blur">
-              <SidebarTrigger className="-ml-1" />
-              <Separator orientation="vertical" className="mr-2 h-4" />
-              <span className="min-w-0 truncate text-sm font-medium">{appName}</span>
-              {superadmin ? (
-                <div className="ml-auto flex shrink-0 items-center">
-                  <UpdateButton />
-                </div>
-              ) : null}
-            </header>
-            <main id="main" className="flex-1">
-              <Outlet />
-            </main>
-          </SidebarInset>
-        </SidebarProvider>
-      </TooltipProvider>
+      <AppFrame
+        app={{ name: appName, icon: <LifeBuoy /> }}
+        nav={nav}
+        pathname={pathname}
+        link={AppLink}
+        navigate={(href) => void router.navigate({ to: href })}
+        user={{ name: me.name || me.email, email: me.email, detail: roleLabel(me.role), image: me.image }}
+        theme={theme}
+        onThemeChange={setTheme}
+        settingsHref="/settings"
+        onSignOut={() => void signOut()}
+        breadcrumbs={breadcrumbs}
+        headerEnd={superadmin ? <UpdateButton /> : null}
+        search={
+          isStaff(me.role)
+            ? {
+                find: findTickets,
+                allResultsHref: (q) => `/tickets?${new URLSearchParams({ q, status: "all" })}`,
+              }
+            : undefined
+        }
+      >
+        <Outlet />
+      </AppFrame>
     </SuperadminUpdates>
   );
 }

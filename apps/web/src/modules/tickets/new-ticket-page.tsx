@@ -7,7 +7,7 @@ import { z } from "zod";
 import type { Attachment, StaffTicketCreate } from "@helpdesk/shared/api/tickets";
 import { URGENCIES, urgencySchema, type Urgency } from "@helpdesk/shared/tickets";
 import { AttachmentPicker } from "@/components/attachments";
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { PersonPicker, type PickedPerson } from "@/components/person-picker";
 import { UrgencyBadge } from "@/components/ticket-badges";
 import { Button } from "@meldgrove/ui/button";

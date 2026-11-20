@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { STATUSES } from "@helpdesk/shared/tickets";
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { ErrorState } from "@meldgrove/ui/states";
 import { Button } from "@meldgrove/ui/button";
 import { Skeleton } from "@meldgrove/ui/skeleton";

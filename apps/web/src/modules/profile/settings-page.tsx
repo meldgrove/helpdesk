@@ -3,15 +3,18 @@ import { Info } from "lucide-react";
 import { toast } from "sonner";
 import type { Me } from "@helpdesk/shared/api/users";
 import type { NotifyChannel } from "@helpdesk/shared/roles";
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@meldgrove/ui/card";
 import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from "@meldgrove/ui/field";
 import { RadioGroup, RadioGroupItem } from "@meldgrove/ui/radio-group";
+import { AboutCard, AppearanceCard, KeyboardShortcutsCard } from "@meldgrove/ui/settings-cards";
 import { useHasRole, useMe } from "@/hooks/use-me";
 import { useT } from "@/i18n";
 import { common } from "@/i18n/common";
 import { errorMessage } from "@/lib/api";
 import { useRoleLabel } from "@/lib/labels";
+import { REPOSITORY_URL } from "@/lib/repository";
+import { useTheme } from "@/lib/theme";
 import { useUpdateMe } from "./api";
 import { messages } from "./messages";
 
@@ -135,11 +138,16 @@ export function SettingsPage() {
   const t = useT(messages);
   const me = useMe();
   const staff = useHasRole("operator");
+  const { theme, setTheme } = useTheme();
   return (
     <Page className="max-w-3xl">
       <PageHeader title={t("title")} description={t("description")} />
       <AccountCard me={me} />
       {staff ? <NotificationsCard me={me} /> : <RequesterNote />}
+      <AppearanceCard value={theme} onChange={setTheme} />
+      <KeyboardShortcutsCard />
+      {/* The software's name, also when an installation renames the app. */}
+      <AboutCard appName="Helpdesk" repositoryUrl={REPOSITORY_URL} />
     </Page>
   );
 }

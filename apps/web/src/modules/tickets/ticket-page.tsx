@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, FileQuestion, Pencil } from "lucide-react";
 import type { TicketDetail } from "@helpdesk/shared/api/tickets";
-import { Page } from "@/components/layout/page";
+import { Page } from "@meldgrove/ui/page";
 import { EmptyState, ErrorState, LoadingState } from "@meldgrove/ui/states";
 import { StatusBadge } from "@/components/ticket-badges";
 import { Button } from "@meldgrove/ui/button";
