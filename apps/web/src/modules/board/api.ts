@@ -4,9 +4,16 @@ import type { Board, TicketMove, TicketSummary } from "@helpdesk/shared/api/tick
 import type { Status } from "@helpdesk/shared/tickets";
 import { useT } from "@/i18n";
 import { api, errorMessage } from "@/lib/api";
-import { isStale, REFRESH_MS, ticketKeys } from "@/modules/tickets/api";
+import {
+  isStale,
+  latestRevision,
+  MOVE_KEY,
+  REFRESH_MS,
+  TICKET_WRITES,
+  ticketKeys,
+} from "@/modules/tickets/api";
 import type { TicketFilters } from "@/modules/tickets/filters";
-import { findTicket, withRevision } from "./board-state";
+import { withRevision } from "./board-state";
 import { messages } from "./messages";
 
 export const boardQuery = (filters: TicketFilters) => ({
@@ -19,23 +26,25 @@ export const boardQuery = (filters: TicketFilters) => ({
 /** A move on the board: the board as it looks after the move, and the target column's order. */
 export type MoveInput = { ticket: TicketSummary; status: Status; board: Board; order: string[] };
 
-const MOVE_KEY = ["board-move"] as const;
-
 /**
  * Moves a ticket: the cached board changes at once; the server gets the
  * ticket's newest revision, the target status and the column's order. Moves
- * run one after another, so quick moves of the same ticket don't refuse each
- * other. A refused move shows a toast and loads the board again.
+ * and other ticket changes run one after another, so quick changes of the
+ * same ticket don't refuse each other. A refused move shows a toast and
+ * loads the board again.
  */
 export function useMoveTicket(key: QueryKey) {
   const t = useT(messages);
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: MOVE_KEY,
-    scope: { id: "board-move" },
+    scope: TICKET_WRITES,
     mutationFn: ({ ticket, status, order }: MoveInput) => {
-      const latest = findTicket(queryClient.getQueryData<Board>(key), ticket.id)?.revision ?? 0;
-      const body: TicketMove = { revision: Math.max(latest, ticket.revision), status, order };
+      const body: TicketMove = {
+        revision: latestRevision(queryClient, ticket.number, ticket.revision),
+        status,
+        order,
+      };
       return api.post<{ revision: number }>(`/tickets/${ticket.number}/move`, body);
     },
     onMutate: async ({ board }) => {
