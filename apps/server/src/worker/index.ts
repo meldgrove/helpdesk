@@ -6,7 +6,7 @@ import { logger } from "../logger";
 import { monitored } from "../error-reporting";
 import { deliverDue, pruneNotifications } from "../notifications/deliver";
 import { NOTIFY_CHANNEL } from "../notifications/enqueue";
-import { syncDirectory } from "../directory/sync";
+import { directory } from "../directory";
 import { pruneUnusedUploads } from "../attachments/storage";
 
 const POLL_MS = 5_000;
@@ -88,15 +88,16 @@ export function startWorker(): Stop {
       monitored("helpdesk-prune-notifications", { minutes: 24 * 60 }, pruneNotifications),
     ),
   ];
-  if (config().DIRECTORY === "keycloak") {
-    const minutes = config().DIRECTORY_SYNC_MINUTES;
+  const { mode, sync } = directory();
+  if (sync) {
+    const minutes = sync.everyMinutes;
     stops.push(
       every(minutes, 2_000, "directory-sync", () =>
-        monitored("helpdesk-directory-sync", { minutes }, () => syncDirectory()),
+        monitored("helpdesk-directory-sync", { minutes }, () => sync.run()),
       ),
     );
   }
-  logger.info({ directory: config().DIRECTORY }, "worker started");
+  logger.info({ directory: mode }, "worker started");
 
   return async () => {
     stopped = true;

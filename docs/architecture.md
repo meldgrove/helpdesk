@@ -79,12 +79,13 @@ falls back to an email.
 ## Sign-in and roles
 
 Better Auth runs the OpenID Connect flow (generic OAuth, PKCE). Before a
-session starts, `directory/sign-in.ts` decides the role: from the Keycloak
-Admin API (`DIRECTORY=keycloak`) or from the groups claim of the verified ID
-token or the userinfo response (`DIRECTORY=oidc`). No role, no session. With
-Keycloak, `directory/sync.ts` also syncs everyone in the groups every 15
-minutes. `auth/resolve.ts` turns a session into the request's principal and
-checks the role on every request.
+session starts, the directory module (`directory/index.ts`) decides the role:
+from the Keycloak Admin API (`DIRECTORY=keycloak`) or from the groups claim of
+the verified ID token or the userinfo response (`DIRECTORY=oidc`), with
+`SUPERADMIN_EMAILS` first. No role, no session. With Keycloak, it also syncs
+everyone in the groups every 15 minutes. Only this module reads `DIRECTORY`.
+`auth/resolve.ts` turns a session into the request's principal and checks the
+role on every request.
 
 ## Web app
 

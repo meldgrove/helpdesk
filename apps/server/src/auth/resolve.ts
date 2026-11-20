@@ -2,8 +2,8 @@ import { and, eq, gt } from "drizzle-orm";
 import { notifyChannelSchema, roleSchema } from "@helpdesk/shared/roles";
 import type { Db } from "../db/client";
 import { sessions, users } from "../db/schema";
-import { auth, SESSION_LIFETIME_SECONDS } from "./auth";
-import { config } from "../config";
+import { auth } from "./auth";
+import { directory } from "../directory";
 import type { UserPrincipal } from "./principal";
 
 /** The signed-in person of a request, or null (no session, revoked session, no role). */
@@ -13,7 +13,7 @@ export async function resolvePrincipal(db: Db, headers: Headers): Promise<UserPr
   // The cookie cache can outlive a revoked session by a minute; check the row.
   const now = new Date();
   // Sessions created before rolling renewal was disabled can still have a later expiry.
-  const claimSessionCutoff = new Date(now.getTime() - SESSION_LIFETIME_SECONDS * 1000);
+  const roleMaxAge = directory().roleMaxAgeSeconds;
   const [row] = await db
     .select({
       id: users.id,
@@ -29,7 +29,7 @@ export async function resolvePrincipal(db: Db, headers: Headers): Promise<UserPr
       and(
         eq(sessions.id, session.session.id),
         gt(sessions.expiresAt, now),
-        config().DIRECTORY === "oidc" ? gt(sessions.createdAt, claimSessionCutoff) : undefined,
+        roleMaxAge === null ? undefined : gt(sessions.createdAt, new Date(now.getTime() - roleMaxAge * 1000)),
       ),
     );
   if (!row) return null;

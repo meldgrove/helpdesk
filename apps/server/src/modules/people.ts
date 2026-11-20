@@ -1,28 +1,27 @@
 import { Hono } from "hono";
-import { and, asc, count, desc, ilike, isNotNull, isNull, or, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, ilike, inArray, isNotNull, isNull, or, type SQL } from "drizzle-orm";
 import {
   auditListQuerySchema,
   peopleQuerySchema,
   userListQuerySchema,
   type User,
 } from "@helpdesk/shared/api/users";
-import { roleSchema } from "@helpdesk/shared/roles";
+import { roleSchema, type Role } from "@helpdesk/shared/roles";
 import { type checkResultSchema } from "@helpdesk/shared/api/common";
 import type { z } from "zod";
-import { config } from "../config";
 import { getDb } from "../db/client";
 import { auditLog, users } from "../db/schema";
 import { audit } from "../core/audit";
 import type { AppEnv } from "../http/env";
 import { conflict } from "../http/errors";
 import { queryOf, requireAdmin, requireStaff, requireSuperadmin } from "../http/middleware";
-import { isEnvironmentSuperadmin } from "../auth/bootstrap";
-import { directoryStatus, staffRoleFilter, syncDirectory } from "../directory/sync";
-import { roleGroups } from "../directory/groups";
-import { createKeycloakClient } from "../directory/keycloak";
+import { directory, isEnvironmentSuperadmin } from "../directory";
 import { iso, isoRequired } from "./util";
 
 const router = new Hono<AppEnv>();
+
+/** People who may be assigned: everyone with a staff role. */
+const STAFF_ROLES: Role[] = ["operator", "admin", "superadmin"];
 
 function search(q: string | undefined): SQL | undefined {
   if (!q) return undefined;
@@ -37,7 +36,12 @@ router.get("/people", async (c) => {
   const rows = await getDb()
     .select({ id: users.id, name: users.name, email: users.email, role: users.role })
     .from(users)
-    .where(and(query.scope === "staff" ? staffRoleFilter() : isNotNull(users.role), search(query.q)))
+    .where(
+      and(
+        query.scope === "staff" ? inArray(users.role, STAFF_ROLES) : isNotNull(users.role),
+        search(query.q),
+      ),
+    )
     .orderBy(asc(users.name), asc(users.email))
     .limit(query.scope === "staff" ? 500 : 50);
   return c.json({
@@ -85,17 +89,17 @@ router.get("/users", async (c) => {
 
 router.get("/directory", async (c) => {
   requireAdmin(c);
-  return c.json(await directoryStatus(getDb()));
+  return c.json(await directory().status());
 });
 
 router.post("/directory/sync", async (c) => {
   const actor = requireSuperadmin(c);
-  if (config().DIRECTORY !== "keycloak")
-    throw conflict("Roles come from the sign-in; there is nothing to sync");
+  const sync = directory().sync;
+  if (!sync) throw conflict("Roles come from the sign-in; there is nothing to sync");
   const started = Date.now();
   let result: z.infer<typeof checkResultSchema>;
   try {
-    const { people } = await syncDirectory();
+    const { people } = await sync.run();
     result = { ok: true, message: `Synced ${people} people`, latencyMs: Date.now() - started };
   } catch (error) {
     result = {
@@ -115,12 +119,11 @@ router.post("/directory/sync", async (c) => {
 /** Checks that the service account can read every role group. */
 router.post("/directory/check", async (c) => {
   requireSuperadmin(c);
-  if (config().DIRECTORY !== "keycloak")
-    throw conflict("Roles come from the sign-in; there is nothing to check");
+  const sync = directory().sync;
+  if (!sync) throw conflict("Roles come from the sign-in; there is nothing to check");
   const started = Date.now();
-  const groups = Object.values(roleGroups()).filter((group): group is string => Boolean(group));
   try {
-    await createKeycloakClient().check(groups);
+    await sync.check();
     return c.json({
       ok: true,
       message: "The service account can read every group",

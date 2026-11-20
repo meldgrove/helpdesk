@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, notInArray, or, sql } from "drizzle-orm";
+import { and, eq, isNotNull, notInArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { highestRole, type Role } from "@helpdesk/shared/roles";
 import type { DirectoryStatus } from "@helpdesk/shared/api/integrations";
@@ -8,7 +8,8 @@ import { settings, users } from "../db/schema";
 import { putSetting } from "../core/settings";
 import { logger } from "../logger";
 import { roleGroups } from "./groups";
-import { createKeycloakClient, displayNameOf, type KeycloakClient, type KeycloakUser } from "./keycloak";
+import { displayNameOf, type KeycloakClient, type KeycloakUser } from "./keycloak";
+import { grantedRole } from "./superadmins";
 
 const lastSyncSchema = z.object({
   at: z.string(),
@@ -17,19 +18,23 @@ const lastSyncSchema = z.object({
   people: z.number().int(),
 });
 
-export async function directoryStatus(db: DbOrTx): Promise<DirectoryStatus> {
+export async function directoryStatus(
+  db: DbOrTx,
+  mode: DirectoryStatus["mode"],
+  syncMinutes: number | null,
+): Promise<DirectoryStatus> {
   const settingsRow = await db.select().from(settings).where(eq(settings.key, "directory"));
   const lastSync = lastSyncSchema.safeParse(settingsRow[0]?.value);
   const groups = roleGroups();
   return {
-    mode: config().DIRECTORY,
+    mode,
     groups: {
       requester: groups.requester,
       operator: groups.operator,
       admin: groups.admin,
       superadmin: groups.superadmin,
     },
-    syncMinutes: config().DIRECTORY === "keycloak" ? config().DIRECTORY_SYNC_MINUTES : null,
+    syncMinutes,
     lastSync: lastSync.success ? lastSync.data : null,
   };
 }
@@ -42,9 +47,7 @@ type Found = { user: KeycloakUser; roles: Set<Role> };
  * in. People who left every group lose their role. Runs in one transaction
  * under a lock, so two processes never sync at once.
  */
-export async function syncDirectory(
-  client: KeycloakClient = createKeycloakClient(),
-): Promise<{ people: number }> {
+export async function syncDirectory(client: KeycloakClient): Promise<{ people: number }> {
   const db = getDb();
   try {
     const found = new Map<string, Found>();
@@ -69,7 +72,6 @@ export async function syncDirectory(
       const superadmins = config().superadminEmails;
       for (const { user, roles } of people) {
         const email = user.email!.trim().toLowerCase();
-        const role = highestRole(roles);
         const name = displayNameOf(user);
         const [existing] = await tx
           .select({ id: users.id, email: users.email, directoryId: users.directoryId })
@@ -77,11 +79,9 @@ export async function syncDirectory(
           .where(or(eq(users.directoryId, user.id), eq(users.email, email)))
           .orderBy(sql`(${users.directoryId} = ${user.id}) desc nulls last`)
           .limit(1);
-        const fromEnvironment = superadmins.includes(email);
         const values = {
           name,
-          role: fromEnvironment ? "superadmin" : role,
-          roleSource: fromEnvironment ? "environment" : "directory",
+          ...grantedRole(email, highestRole(roles), "directory"),
           roleCheckedAt: new Date(),
           directoryId: user.id,
           updatedAt: new Date(),
@@ -135,7 +135,3 @@ export async function syncDirectory(
     throw error;
   }
 }
-
-/** Ids of people who may be assigned: everyone with a staff role. */
-export const STAFF_ROLE_VALUES: Role[] = ["operator", "admin", "superadmin"];
-export const staffRoleFilter = () => inArray(users.role, STAFF_ROLE_VALUES);

@@ -1,4 +1,6 @@
 import { and, eq, notInArray, sql } from "drizzle-orm";
+import type { User } from "@helpdesk/shared/api/users";
+import type { Role } from "@helpdesk/shared/roles";
 import { config } from "../config";
 import type { Db } from "../db/client";
 import { users } from "../db/schema";
@@ -37,4 +39,16 @@ export async function ensureEnvironmentSuperadmins(db: Db) {
 
 export function isEnvironmentSuperadmin(email: string): boolean {
   return config().superadminEmails.includes(email.toLowerCase());
+}
+
+export type RoleSource = NonNullable<User["roleSource"]>;
+
+/** A person's role and where it came from: SUPERADMIN_EMAILS first, then their groups. */
+export function grantedRole(
+  email: string,
+  fromGroups: Role | null,
+  source: Exclude<RoleSource, "environment">,
+): { role: Role | null; roleSource: RoleSource | null } {
+  if (isEnvironmentSuperadmin(email)) return { role: "superadmin", roleSource: "environment" };
+  return fromGroups ? { role: fromGroups, roleSource: source } : { role: null, roleSource: null };
 }

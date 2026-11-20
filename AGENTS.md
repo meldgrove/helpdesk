@@ -31,8 +31,8 @@ apps/server/src/
   instrument.ts    starts Sentry before the app loads (node --import)
   config.ts        every environment variable (zod); read only via config()
   db/schema/       Drizzle schema (auth.ts, app.ts); db/client.ts, db/migrate.ts
-  auth/            Better Auth, session → principal, SUPERADMIN_EMAILS
-  directory/       roles from groups: Keycloak Admin API sync, sign-in check, groups claim
+  auth/            Better Auth, session → principal
+  directory/       roles from groups (index.ts): Keycloak Admin API or groups claim, SUPERADMIN_EMAILS
   tickets/         ticket writes (service.ts), reads (queries.ts), stored answers
   notifications/   outbox (enqueue.ts), templates, transports, delivery
   attachments/     file storage on disk
