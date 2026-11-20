@@ -227,5 +227,8 @@ test("an admin makes the form German; the rest of the app stays English", async 
   await expect(erin.getByLabel("Dringend", { exact: true })).toBeVisible();
   await erin.getByRole("button", { name: "Weiter" }).click();
   await expect(erin.getByText("Beantworte diese Frage").first()).toBeVisible();
-  await expect(erin.getByRole("link", { name: "My requests" })).toBeVisible();
+  // The sidebar stays English; the breadcrumb links "My requests" too, so look in the sidebar.
+  await expect(
+    erin.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "My requests" }),
+  ).toBeVisible();
 });
