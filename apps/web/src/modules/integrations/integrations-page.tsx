@@ -1,4 +1,4 @@
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { useT } from "@/i18n";
 import { DeliveriesCard } from "./deliveries-card";
 import { EmailCard } from "./email-card";

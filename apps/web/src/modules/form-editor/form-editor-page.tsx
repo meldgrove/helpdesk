@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import type { Form } from "@helpdesk/shared/api/form";
 import type { FormDefinition } from "@helpdesk/shared/form";
 import { ConfirmDialog } from "@meldgrove/ui/confirm-dialog";
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { ErrorState, LoadingState } from "@meldgrove/ui/states";
 import { Alert, AlertDescription, AlertTitle } from "@meldgrove/ui/alert";
 import { Badge } from "@meldgrove/ui/badge";

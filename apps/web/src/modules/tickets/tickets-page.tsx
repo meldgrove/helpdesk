@@ -4,7 +4,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { ListTodo, Plus } from "lucide-react";
 import type { TicketSummary } from "@helpdesk/shared/api/tickets";
 import { STATUSES } from "@helpdesk/shared/tickets";
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { Pager } from "@meldgrove/ui/pager";
 import { EmptyState, ErrorState, LoadingState } from "@meldgrove/ui/states";
 import { StatusBadge, UrgencyBadge } from "@/components/ticket-badges";

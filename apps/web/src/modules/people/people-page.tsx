@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Search, UsersRound } from "lucide-react";
 import type { User } from "@helpdesk/shared/api/users";
-import { Page, PageHeader } from "@/components/layout/page";
+import { Page, PageHeader } from "@meldgrove/ui/page";
 import { EmptyState, ErrorState, LoadingState } from "@meldgrove/ui/states";
 import { Badge } from "@meldgrove/ui/badge";
 import { Card } from "@meldgrove/ui/card";
