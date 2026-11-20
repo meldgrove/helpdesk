@@ -1,7 +1,13 @@
-import { useMutation, useMutationState, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useMutationState, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { Category } from "@helpdesk/shared/api/form";
-import type { MessageCreate, TicketDetail, TicketPatch, TicketSummary } from "@helpdesk/shared/api/tickets";
+import type {
+  Board,
+  MessageCreate,
+  TicketDetail,
+  TicketPatch,
+  TicketSummary,
+} from "@helpdesk/shared/api/tickets";
 import type { Status, Urgency } from "@helpdesk/shared/tickets";
 import type { PickedPerson } from "@/components/person-picker";
 import { useT } from "@/i18n";
@@ -84,24 +90,54 @@ export function withChange(ticket: TicketDetail, change: TicketChange): TicketDe
 /** True when the server refused a change because someone else changed the ticket first. */
 export const isStale = (error: unknown) => error instanceof ApiError && error.code === "ticket_changed";
 
+/**
+ * Changes and board moves of tickets run one after another, so one doesn't
+ * send a revision that the one before it is about to replace.
+ */
+export const TICKET_WRITES = { id: "ticket-write" };
+
+/** Board moves (board/api.ts). */
+export const MOVE_KEY = ["board-move"] as const;
+
+/**
+ * The newest revision of a ticket that this browser knows: the given one,
+ * the cached ticket's or a cached board's. A change answers with the new
+ * revision in one cache, a move in another; each sends the newest.
+ */
+export function latestRevision(queryClient: QueryClient, number: number, known: number): number {
+  let revision = Math.max(
+    known,
+    queryClient.getQueryData<TicketDetail>(ticketKeys.detail(number))?.revision ?? 0,
+  );
+  for (const [, board] of queryClient.getQueriesData<Board>({ queryKey: ticketKeys.boards })) {
+    for (const column of board?.columns ?? []) {
+      for (const ticket of column.tickets) {
+        if (ticket.number === number) revision = Math.max(revision, ticket.revision);
+      }
+    }
+  }
+  return revision;
+}
+
 const UPDATE_KEY = ["ticket-update"] as const;
 
 /**
- * Changes a ticket's fields. Changes run one after another, each with the
- * newest known revision, so quick changes in a row don't refuse each other.
- * The answer replaces the cached ticket; a stale revision shows a toast and
- * loads the ticket again.
+ * Changes a ticket's fields. Changes (and board moves) run one after
+ * another, each with the newest known revision, so quick changes in a row
+ * don't refuse each other. The answer replaces the cached ticket; a stale
+ * revision shows a toast and loads the ticket again.
  */
 export function useUpdateTicket() {
   const t = useT(messages);
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: UPDATE_KEY,
-    scope: { id: "ticket-update" },
-    mutationFn: ({ number, revision, change }: TicketUpdate) => {
-      const cached = queryClient.getQueryData<TicketDetail>(ticketKeys.detail(number))?.revision ?? 0;
-      return api.patch<TicketDetail>(`/tickets/${number}`, toPatch(change, Math.max(cached, revision)));
-    },
+    scope: TICKET_WRITES,
+    mutationFn: ({ number, revision, change }: TicketUpdate) =>
+      api.patch<TicketDetail>(
+        `/tickets/${number}`,
+        toPatch(change, latestRevision(queryClient, number, revision)),
+      ),
     onSuccess: (detail) => {
       queryClient.setQueryData(ticketKeys.detail(detail.number), detail);
     },
@@ -111,7 +147,10 @@ export function useUpdateTicket() {
       void queryClient.invalidateQueries({ queryKey: ticketKeys.detail(number) });
     },
     onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: ticketKeys.boards });
+      // While a move waits or runs, a loaded board would put its card back; the move loads it.
+      if (!queryClient.isMutating({ mutationKey: MOVE_KEY })) {
+        void queryClient.invalidateQueries({ queryKey: ticketKeys.boards });
+      }
       void queryClient.invalidateQueries({ queryKey: ticketKeys.lists });
     },
   });

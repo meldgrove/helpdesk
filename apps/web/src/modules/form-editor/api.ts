@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Category, CategoryInput, Form, FormUpdate } from "@helpdesk/shared/api/form";
 import { api } from "@/lib/api";
+import { categoriesQuery as staffCategoriesQuery } from "@/modules/tickets/api";
 
 export const formQuery = { queryKey: ["form"] as const, queryFn: () => api.get<Form>("/form") };
 
@@ -27,13 +28,17 @@ export function usePublishForm() {
   });
 }
 
-/** Category changes reply with the whole list; the form's category choices change too. */
+/**
+ * Category changes reply with the whole list: it replaces this list and the
+ * one of the ticket pages; the form's category choices change too.
+ */
 function useCategoryMutation<Variables>(call: (variables: Variables) => Promise<CategoryList>) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: call,
     onSuccess: (list) => {
       queryClient.setQueryData(categoriesQuery.queryKey, list);
+      queryClient.setQueryData(staffCategoriesQuery.queryKey, list);
       void queryClient.invalidateQueries({ queryKey: formQuery.queryKey });
     },
   });
