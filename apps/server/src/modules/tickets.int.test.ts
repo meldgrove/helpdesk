@@ -614,7 +614,7 @@ describe("categories", () => {
 
 describe("SUPERADMIN_EMAILS", () => {
   it("takes the role from addresses no longer listed", async () => {
-    const { ensureEnvironmentSuperadmins } = await import("../auth/bootstrap");
+    const { ensureEnvironmentSuperadmins } = await import("../directory");
     const former = await createUser("superadmin", { email: "former@example.org" });
     await getDb().update(users).set({ roleSource: "environment" }).where(eq(users.id, former.id));
     await ensureEnvironmentSuperadmins(getDb());

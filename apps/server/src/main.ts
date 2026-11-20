@@ -4,7 +4,7 @@ import { logger } from "./logger";
 import { closeDb, getDb } from "./db/client";
 import { runMigrations } from "./db/migrate";
 import { createApp } from "./http/app";
-import { ensureEnvironmentSuperadmins } from "./auth/bootstrap";
+import { ensureEnvironmentSuperadmins } from "./directory";
 import { ensureDefaults } from "./core/seed";
 import { flushErrorReports } from "./error-reporting";
 import { startWebJobs, startWorker, type Stop } from "./worker";

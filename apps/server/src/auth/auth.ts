@@ -8,14 +8,14 @@ import { getDb } from "../db/client";
 import { accounts, authRateLimits, sessions, users, verifications } from "../db/schema";
 import { CLIENT_IP_HEADER } from "../http/client-ip";
 import { logger } from "../logger";
-import { refreshAccessAtSignIn, type SignInTokens } from "../directory/sign-in";
+import { directory, type SignInTokens } from "../directory";
 
-export const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
+const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
 
 /**
  * Sign-in only through the OpenID Connect provider. Anyone the provider
  * knows may try; a session starts only when the person has a role, which
- * `refreshAccessAtSignIn` decides from their groups at every sign-in.
+ * the directory decides from their groups at every sign-in.
  */
 function createAuth() {
   const settings = config();
@@ -72,12 +72,8 @@ function createAuth() {
         if (source.action === "create-user" || !user.id) return;
         const subject = source.oauth?.profile?.sub;
         if (typeof subject !== "string" || !subject) return { error: "oidc_subject_required" };
-        const [existing] = await getDb()
-          .select({ directoryId: users.directoryId })
-          .from(users)
-          .where(eq(users.id, user.id));
         // Better Auth calls this before writing the account link or profile.
-        if (existing?.directoryId && existing.directoryId !== subject) {
+        if (!(await directory().ownsSubject(user.id, subject))) {
           return { error: "oidc_subject_mismatch" };
         }
       },
@@ -85,7 +81,7 @@ function createAuth() {
     session: {
       expiresIn: SESSION_LIFETIME_SECONDS,
       // Claim-based roles can only be refreshed by signing in again.
-      disableSessionRefresh: settings.DIRECTORY === "oidc",
+      disableSessionRefresh: directory().roleMaxAgeSeconds !== null,
       updateAge: 60 * 60 * 24,
       // Protected routes check the current session and role in the database.
       cookieCache: { enabled: true, maxAge: 60 },
@@ -144,7 +140,7 @@ function createAuth() {
           before: async (session, context) => {
             const tokens = context?.request && callbackTokens.get(context.request);
             if (!tokens) return false;
-            const role = await refreshAccessAtSignIn(session.userId, tokens);
+            const role = await directory().admit(session.userId, tokens);
             if (!role) return false;
             return { data: session };
           },
