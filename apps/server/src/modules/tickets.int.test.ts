@@ -268,7 +268,7 @@ describe("requests that cannot be stored", () => {
     const outdated = await send(old.versionId);
     expect(outdated.status).toBe(409);
     expect(outdated.body.error.code).toBe("form_changed");
-    expect((await send(published.body.versionId)).status).toBe(201);
+    expect((await send(published.body.versionId.toUpperCase())).status).toBe(201);
   });
 
   it("refuses text the database cannot store, in a body and in a query", async () => {
@@ -282,6 +282,8 @@ describe("requests that cannot be stored", () => {
       expect(reply.status).toBe(400);
     }
     expect((await request("GET", "/api/v1/tickets?q=a%00b", { userId: operator.id })).status).toBe(400);
+    // An encoded lone surrogate is not decoded: it stays plain text and can be stored.
+    expect((await request("GET", "/api/v1/tickets?q=a%ED%A0%80b", { userId: operator.id })).status).toBe(200);
     expect((await submit({ description: "Größe 🙂" })).status).toBe(201);
   });
 

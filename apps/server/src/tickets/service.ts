@@ -196,7 +196,7 @@ export async function createFromForm(
     getDb().transaction(async (tx) => {
       // Only the current form: an older version may lack questions that are required now.
       const [version] = await tx.select().from(formVersions).orderBy(desc(formVersions.version)).limit(1);
-      if (version?.id !== input.formVersionId) {
+      if (version?.id !== input.formVersionId.toLowerCase()) {
         throw conflict("The form changed. Reload the page and send it again.", "form_changed");
       }
       const definition = version.definition;
