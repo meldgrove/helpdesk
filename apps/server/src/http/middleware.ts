@@ -79,19 +79,33 @@ export const requireStaff = (c: Context<AppEnv>) => requireRole(c, "operator");
 export const requireAdmin = (c: Context<AppEnv>) => requireRole(c, "admin");
 export const requireSuperadmin = (c: Context<AppEnv>) => requireRole(c, "superadmin");
 
+/** PostgreSQL stores neither NUL characters nor lone surrogates; refuse them instead of failing on the write. */
+function storableText(value: unknown): void {
+  if (typeof value === "string" && (value.includes("\u0000") || !value.isWellFormed())) {
+    throw badRequest("The request contains characters that cannot be stored");
+  }
+}
+
 /** The JSON body validated with a shared schema. */
 export async function jsonBody<T extends z.ZodType>(c: Context<AppEnv>, schema: T): Promise<z.infer<T>> {
   let body: unknown;
   try {
-    body = await c.req.json();
-  } catch {
+    body = JSON.parse(await c.req.text(), (key, value: unknown) => {
+      storableText(key);
+      storableText(value);
+      return value;
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
     throw badRequest("The request body must be JSON");
   }
   return parseWith(schema, body);
 }
 
 export function queryOf<T extends z.ZodType>(c: Context<AppEnv>, schema: T): z.infer<T> {
-  return parseWith(schema, c.req.query());
+  const query = c.req.query();
+  Object.values(query).forEach(storableText);
+  return parseWith(schema, query);
 }
 
 /** A route parameter that must be a UUID (404 otherwise, like an unknown id). */

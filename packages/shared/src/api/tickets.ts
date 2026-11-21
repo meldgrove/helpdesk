@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { idSchema } from "./common";
-import { answersSchema, questionTypeSchema } from "../form";
+import { answersSchema, questionTypeSchema, validDate } from "../form";
 import { MAX_ATTACHMENTS_PER_MESSAGE, statusSchema, urgencySchema } from "../tickets";
 
 export const personRefSchema = z.object({ id: idSchema, name: z.string(), email: z.string() });
@@ -125,9 +125,10 @@ export const ticketDetailSchema = ticketSummarySchema.extend({
 });
 export type TicketDetail = z.infer<typeof ticketDetailSchema>;
 
+/** A calendar date the database can store (its dates start in the year 1). */
 const dueDateSchema = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a date")
+  .refine((value) => validDate(value) && value >= "0001-01-01", "Enter a date")
   .nullable();
 
 /** Staff changes; `revision` refuses a change to a ticket someone else changed meanwhile. */
