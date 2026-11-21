@@ -248,6 +248,56 @@ describe("the form's language", () => {
   });
 });
 
+describe("requests that cannot be stored", () => {
+  it("refuses a form version that is no longer the current one", async () => {
+    const old = await currentForm();
+    const published = await request("PUT", "/api/v1/form", {
+      userId: admin.id,
+      body: { baseVersion: 1, definition: DEFAULT_FORM },
+    });
+    expect(published.status).toBe(200);
+    const send = (formVersionId: string) =>
+      request("POST", "/api/v1/requests", {
+        userId: requester.id,
+        body: {
+          formVersionId,
+          submissionKey: randomUUID(),
+          answers: { title: "Printer", category: categoryId, urgency: "urgent", description: "It jams." },
+        },
+      });
+    const outdated = await send(old.versionId);
+    expect(outdated.status).toBe(409);
+    expect(outdated.body.error.code).toBe("form_changed");
+    expect((await send(published.body.versionId)).status).toBe(201);
+  });
+
+  it("refuses text the database cannot store, in a body and in a query", async () => {
+    await submit();
+    for (const text of ["a\u0000b", "a\ud800b"]) {
+      expect((await submit({ description: text })).status).toBe(400);
+      const reply = await request("POST", "/api/v1/requests/1/messages", {
+        userId: requester.id,
+        body: { body: text },
+      });
+      expect(reply.status).toBe(400);
+    }
+    expect((await request("GET", "/api/v1/tickets?q=a%00b", { userId: operator.id })).status).toBe(400);
+    expect((await submit({ description: "Größe 🙂" })).status).toBe(201);
+  });
+
+  it("refuses a due date that is not a calendar date", async () => {
+    await submit();
+    for (const dueDate of ["2026-02-31", "0000-01-01"]) {
+      const response = await request("PATCH", "/api/v1/tickets/1", {
+        userId: operator.id,
+        body: { revision: 1, dueDate },
+      });
+      expect(response.status).toBe(422);
+      expect(response.body.error.fields).toHaveProperty("dueDate");
+    }
+  });
+});
+
 describe("working on tickets", () => {
   it("changes fields with a revision check and records the activity", async () => {
     await setUpIntegrations(getDb());
