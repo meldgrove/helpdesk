@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type {
   MessageCreate,
   RequestCreate,
@@ -194,8 +194,11 @@ export async function createFromForm(
 ): Promise<{ number: number }> {
   return once(input.submissionKey, actor, () =>
     getDb().transaction(async (tx) => {
-      const [version] = await tx.select().from(formVersions).where(eq(formVersions.id, input.formVersionId));
-      if (!version) throw conflict("The form changed. Reload the page and send it again.", "form_changed");
+      // Only the current form: an older version may lack questions that are required now.
+      const [version] = await tx.select().from(formVersions).orderBy(desc(formVersions.version)).limit(1);
+      if (version?.id !== input.formVersionId.toLowerCase()) {
+        throw conflict("The form changed. Reload the page and send it again.", "form_changed");
+      }
       const definition = version.definition;
       const active = await tx.select().from(categories).where(eq(categories.isActive, true));
       const { values, issues, visible } = validateAnswers(definition, input.answers, {
