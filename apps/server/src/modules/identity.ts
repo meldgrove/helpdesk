@@ -121,8 +121,8 @@ function requestId(c: Context<AppEnv>): string {
 router.post("/tickets/:number/identity-requests/:id/send", async (c) => {
   requireStaff(c);
   const number = numberParam(c);
-  await resendIdentityRequest(number, requestId(c));
-  return c.json(await ticketDetail(number));
+  const outcome = await resendIdentityRequest(number, requestId(c));
+  return c.json(await ticketDetail(number), outcome === "confirmed" ? 200 : 202);
 });
 
 router.post("/tickets/:number/identity-requests/:id/cancel", async (c) => {

@@ -86,6 +86,7 @@ function RequestDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSent: () => void;
+  onRefused: () => void;
 }) {
   const t = useT(messages);
   const tc = useT(common);
@@ -126,6 +127,7 @@ function RequestDialog(props: {
             submissionKey={props.submissionKey}
             onCancel={() => props.onOpenChange(false)}
             onSent={props.onSent}
+            onRefused={props.onRefused}
             onSendingChange={setSending}
           />
         )}
@@ -140,6 +142,7 @@ function RequestForm(props: {
   submissionKey: string;
   onCancel: () => void;
   onSent: () => void;
+  onRefused: () => void;
   onSendingChange: (sending: boolean) => void;
 }) {
   const t = useT(messages);
@@ -162,6 +165,8 @@ function RequestForm(props: {
     onError: (error) => {
       setErrors(error instanceof ApiError && error.fields ? error.fields : {});
       toast.error(errorMessage(error));
+      // Refused (or never saved): the corrected details go as a new request.
+      if (error instanceof ApiError && error.status >= 400 && error.status < 500) props.onRefused();
     },
   });
   const { onSendingChange } = props;
@@ -379,8 +384,9 @@ export function IdentityRequests({ ticket }: { ticket: TicketDetail }) {
   const t = useT(messages);
   const me = useMe();
   const [open, setOpen] = useState(false);
-  // Kept until a send succeeds: a send that was closed or failed without an
-  // answer, and is sent again, stays one request in IAM.
+  // Kept until a send is saved: a send that was closed or failed without an
+  // answer, and is sent again, stays one request in IAM. A refusal starts a
+  // new one, for the corrected details.
   const [submissionKey, setSubmissionKey] = useState(() => crypto.randomUUID());
   if (!me.identityRequests && ticket.identityRequests.length === 0) return null;
   return (
@@ -420,6 +426,7 @@ export function IdentityRequests({ ticket }: { ticket: TicketDetail }) {
             setOpen(false);
             setSubmissionKey(crypto.randomUUID());
           }}
+          onRefused={() => setSubmissionKey(crypto.randomUUID())}
         />
       ) : null}
     </Card>

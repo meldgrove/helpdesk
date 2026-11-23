@@ -157,11 +157,87 @@ async function confirmedEvents(tx: DbOrTx, row: Row, answer: IamRequest): Promis
   }
 }
 
-/** Saves IAM's confirmation of a send and forgets the stored details. False when another delivery confirmed it first. */
-async function confirm(id: string, answer: IamRequest): Promise<boolean> {
-  return getDb().transaction(async (tx) => {
-    const [row] = await tx.select().from(identityRequests).where(eq(identityRequests.id, id)).for("update");
-    if (!row || row.status !== "sending" || answer.externalId !== externalId(id)) return false;
+/** IAM's refusal as one line, for the ticket: the message and the fields it names. */
+function refusal(error: IamError): string {
+  const fields = Object.values(error.fields ?? {});
+  return (fields.length > 0 ? fields.join(" ") : error.message).slice(0, 1000);
+}
+
+/**
+ * IAM said no for good and stored nothing: the details are invalid (422),
+ * or the reference belongs to other details or a decided request (409
+ * `reference_reused`, `request_closed`). Any other answer may change on a
+ * later try.
+ */
+const isRefusal = (error: IamError) =>
+  error.kind === "invalid" ||
+  (error.kind === "closed" && (error.code === "reference_reused" || error.code === "request_closed"));
+
+type Delivery =
+  | { outcome: "confirmed" }
+  | { outcome: "refused"; error: IamError | null }
+  | { outcome: "unconfirmed"; error: IamError }
+  | { outcome: "skipped" };
+
+/**
+ * Delivers a saved request with its saved details, under its row's lock:
+ * the send, "Send again" and the worker never deliver the same request at
+ * once, and IAM's answer is written in the same transaction. `wait`: wait
+ * for another delivery to finish (people); the worker skips a locked row.
+ * A refusal deletes a fresh send (`onRefusal: "delete"`, staff fix the
+ * dialog) or keeps it as refused, without its details.
+ */
+async function deliver(
+  id: string,
+  options: { wait: boolean; onRefusal: "delete" | "keep" },
+): Promise<Delivery> {
+  const stored = await getStoredIam(getDb());
+  return getDb().transaction(async (tx): Promise<Delivery> => {
+    const query = tx.select().from(identityRequests).where(eq(identityRequests.id, id));
+    const [row] = options.wait ? await query.for("update") : await query.for("update", { skipLocked: true });
+    // Gone: a refused fresh send was deleted meanwhile (people), or another delivery holds it (worker).
+    if (!row) return options.wait ? { outcome: "refused", error: null } : { outcome: "skipped" };
+    if (row.status === "refused") return { outcome: "refused", error: null };
+    if (row.status !== "sending" || !row.payload) return { outcome: "confirmed" };
+
+    let answer: IamRequest;
+    try {
+      answer = await iamClient(stored).create(row.payload);
+      if (answer.externalId !== externalId(id))
+        throw new IamError("failed", "IAM answered about another request.");
+    } catch (error) {
+      if (!(error instanceof IamError)) throw error;
+      if (isRefusal(error)) {
+        if (options.onRefusal === "delete") {
+          await tx.delete(identityRequests).where(eq(identityRequests.id, id));
+        } else {
+          const reason = refusal(error);
+          await tx
+            .update(identityRequests)
+            .set({
+              status: "refused",
+              reason,
+              payload: null,
+              lastError: null,
+              checkedAt: sql`now()`,
+              updatedAt: sql`now()`,
+            })
+            .where(eq(identityRequests.id, id));
+          await tx.insert(ticketEvents).values({
+            ticketId: row.ticketId,
+            actorId: null,
+            kind: "identity_request_changed",
+            data: { name: row.name, to: "refused", reason },
+          });
+        }
+        return { outcome: "refused", error };
+      }
+      await tx
+        .update(identityRequests)
+        .set({ lastError: error.message.slice(0, 1000), checkedAt: sql`now()`, updatedAt: sql`now()` })
+        .where(eq(identityRequests.id, id));
+      return { outcome: "unconfirmed", error };
+    }
     await tx
       .update(identityRequests)
       .set({
@@ -178,87 +254,24 @@ async function confirm(id: string, answer: IamRequest): Promise<boolean> {
       })
       .where(eq(identityRequests.id, id));
     await confirmedEvents(tx, row, answer);
-    return true;
+    return { outcome: "confirmed" };
   });
 }
 
-/** IAM's refusal as one line, for the ticket: the message and the fields it names. */
-function refusal(error: IamError): string {
-  const fields = Object.values(error.fields ?? {});
-  return (fields.length > 0 ? fields.join(" ") : error.message).slice(0, 1000);
-}
-
-/** IAM refused the stored details for good: the request is kept as refused, without them. */
-async function markRefused(id: string, error: IamError): Promise<void> {
-  await getDb().transaction(async (tx) => {
-    const [row] = await tx.select().from(identityRequests).where(eq(identityRequests.id, id)).for("update");
-    if (!row || row.status !== "sending") return;
-    const reason = refusal(error);
-    await tx
-      .update(identityRequests)
-      .set({
-        status: "refused",
-        reason,
-        payload: null,
-        lastError: null,
-        checkedAt: sql`now()`,
-        updatedAt: sql`now()`,
-      })
-      .where(eq(identityRequests.id, id));
-    await tx.insert(ticketEvents).values({
-      ticketId: row.ticketId,
-      actorId: null,
-      kind: "identity_request_changed",
-      data: { name: row.name, to: "refused", reason },
-    });
-  });
-}
-
-/** IAM said no for good (the details, or a reference used for other details); IAM stored nothing. */
-const isRefusal = (error: IamError) => error.kind === "invalid" || error.kind === "closed";
-
-type Delivery =
-  | { outcome: "confirmed" }
-  | { outcome: "refused"; error: IamError }
-  | { outcome: "unconfirmed"; error: IamError };
-
-/**
- * Sends a stored request to IAM with its stored details. Without a clear
- * answer the request stays `sending` with the error, for "Send again" and
- * the worker.
- */
-async function deliver(row: Row): Promise<Delivery> {
-  if (row.status !== "sending" || !row.payload) return { outcome: "confirmed" };
-  let answer: IamRequest;
-  try {
-    answer = await iamClient(await getStoredIam(getDb())).create(row.payload);
-  } catch (error) {
-    if (!(error instanceof IamError)) throw error;
-    if (isRefusal(error)) return { outcome: "refused", error };
-    await getDb()
-      .update(identityRequests)
-      .set({ lastError: error.message.slice(0, 1000), checkedAt: sql`now()`, updatedAt: sql`now()` })
-      .where(and(eq(identityRequests.id, row.id), eq(identityRequests.status, "sending")));
-    return { outcome: "unconfirmed", error };
-  }
-  if (answer.externalId !== externalId(row.id)) {
-    const error = new IamError("failed", "IAM answered about another request.");
-    await getDb()
-      .update(identityRequests)
-      .set({ lastError: error.message, checkedAt: sql`now()` })
-      .where(eq(identityRequests.id, row.id));
-    return { outcome: "unconfirmed", error };
-  }
-  await confirm(row.id, answer);
-  return { outcome: "confirmed" };
+/** A request IAM refused (now or before): staff send a corrected one, under a new key. */
+function refusedError(error: IamError | null): unknown {
+  return error
+    ? asAppError(error)
+    : conflict("IAM refused this request. Send a corrected one.", "iam_refused");
 }
 
 /**
  * Sends a request to IAM from a ticket: saved first, then delivered.
  * "confirmed": IAM has it. "unconfirmed": saved, but IAM did not answer
- * clearly; "Send again" and the worker deliver it. A refusal by IAM throws
- * its errors and keeps nothing, so staff fix the dialog and send again. The
- * same `submissionKey` again delivers the stored details, never new ones.
+ * clearly; "Send again" and the worker deliver it. A refusal throws IAM's
+ * errors: a fresh send is forgotten, a retried one stays on the ticket as
+ * refused. The same `submissionKey` again delivers the saved details, never
+ * new ones.
  */
 export async function sendIdentityRequest(
   actor: UserPrincipal,
@@ -302,40 +315,39 @@ export async function sendIdentityRequest(
     })
     .onConflictDoNothing()
     .returning();
-  // The same key again (a retry, a double click): deliver what was saved first.
-  const [row] = created
-    ? [created]
-    : await db.select().from(identityRequests).where(eq(identityRequests.id, input.submissionKey));
-  if (!row) throw conflict("This request was already sent", "duplicate_submission");
-  if (row.ticketId !== ticket.id) throw conflict("This request was already sent", "duplicate_submission");
-
-  const delivery = await deliver(row);
-  if (delivery.outcome === "confirmed") return "confirmed";
-  if (delivery.outcome === "unconfirmed") return "unconfirmed";
   if (!created) {
-    // Saved by an earlier attempt: keep it, as refused, on the ticket.
-    await markRefused(row.id, delivery.error);
-    return "confirmed";
+    // The same key again (a retry, a double click): deliver what was saved first.
+    const [saved] = await db
+      .select({ ticketId: identityRequests.ticketId })
+      .from(identityRequests)
+      .where(eq(identityRequests.id, input.submissionKey));
+    if (saved && saved.ticketId !== ticket.id) {
+      throw conflict("This request was already sent", "duplicate_submission");
+    }
   }
-  // IAM stored nothing: forget it, so staff fix the dialog and send again.
-  await db
-    .delete(identityRequests)
-    .where(and(eq(identityRequests.id, row.id), eq(identityRequests.status, "sending")));
-  throw asAppError(delivery.error);
+  const delivery = await deliver(input.submissionKey, {
+    wait: true,
+    onRefusal: created ? "delete" : "keep",
+  });
+  if (delivery.outcome === "refused") throw refusedError(delivery.error);
+  return delivery.outcome === "unconfirmed" ? "unconfirmed" : "confirmed";
 }
 
-/** "Send again" for a request IAM has not confirmed: the stored details, the same reference. */
-export async function resendIdentityRequest(number: number, id: string): Promise<void> {
+/** "Send again" for a request IAM has not confirmed: the saved details, the same reference. */
+export async function resendIdentityRequest(
+  number: number,
+  id: string,
+): Promise<"confirmed" | "unconfirmed"> {
   const [found] = await getDb()
-    .select({ row: identityRequests })
+    .select({ id: identityRequests.id })
     .from(identityRequests)
     .innerJoin(tickets, eq(tickets.id, identityRequests.ticketId))
     .where(and(eq(identityRequests.id, id), eq(tickets.number, number)));
   if (!found) throw notFound("Request not found");
-  if (found.row.status !== "sending") return;
   await call(async () => iamClient(await getStoredIam(getDb())));
-  const delivery = await deliver(found.row);
-  if (delivery.outcome === "refused") await markRefused(id, delivery.error);
+  const delivery = await deliver(id, { wait: true, onRefusal: "keep" });
+  // A refusal stays on the ticket as refused; the ticket shows it.
+  return delivery.outcome === "unconfirmed" ? "unconfirmed" : "confirmed";
 }
 
 /** Withdraws an open request in IAM, e.g. when the contract fell through. */
@@ -383,6 +395,8 @@ async function checkedNow(id: string): Promise<void> {
 
 /** Asks IAM what became of unsettled requests, least recently checked first. Returns how many changed. */
 export async function syncIdentityRequests(limit = 100): Promise<number> {
+  // Also when IAM is not set up any more: a stuck send must not go unseen.
+  await alertStuckSends();
   const stored = await getStoredIam(getDb());
   if (!iamConfigured(stored)) return 0;
   const client = iamClient(stored);
@@ -395,12 +409,9 @@ export async function syncIdentityRequests(limit = 100): Promise<number> {
   let changed = 0;
   for (const row of rows) {
     if (row.status === "sending" || row.iamId === null) {
-      const delivery = await deliver(row);
-      if (delivery.outcome === "confirmed") changed += 1;
-      else if (delivery.outcome === "refused") {
-        await markRefused(row.id, delivery.error);
-        changed += 1;
-      } else {
+      const delivery = await deliver(row.id, { wait: false, onRefusal: "keep" });
+      if (delivery.outcome === "confirmed" || delivery.outcome === "refused") changed += 1;
+      else if (delivery.outcome === "unconfirmed") {
         logger.warn(
           { requestId: row.id, kind: delivery.error.kind },
           "IAM did not confirm an identity request",
@@ -429,7 +440,6 @@ export async function syncIdentityRequests(limit = 100): Promise<number> {
     }
     if (await apply(row.id, answer, null)) changed += 1;
   }
-  await alertStuckSends();
   return changed;
 }
 

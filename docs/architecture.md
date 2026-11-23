@@ -78,9 +78,12 @@ the stored API key. `identity/service.ts` saves a send before calling IAM
 key is the row's id and IAM's `externalId`, `helpdesk:<id>`) and delivers
 it: the send itself, "Send again", and the worker every 5 minutes, always
 with the stored details, so IAM keeps one request (IAM also refuses the
-reference with other details). IAM's confirmation sets `iam_id`, drops the
-payload and records `identity_requested`; a refusal (422, 409) deletes a
-fresh send (staff fix the dialog) or marks a retried one `refused`; no
+reference with other details). Each delivery holds the row's lock while it
+asks IAM and writes the answer, so two deliveries of one request never
+overlap (the worker skips a locked row). IAM's confirmation sets `iam_id`, drops the
+payload and records `identity_requested`; a refusal (422, or 409
+`reference_reused` / `request_closed`) deletes a fresh send (staff fix the
+dialog, which then uses a new key) or marks a retried one `refused`; no
 clear answer keeps it `sending` with `last_error`, and after a day Sentry
 gets one error. `syncIdentityRequests` (worker) also asks IAM about
 requests that are open or approved without ready accounts (`active`). Each
