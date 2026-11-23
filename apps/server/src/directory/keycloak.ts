@@ -109,6 +109,12 @@ export function createKeycloakClient(options?: {
       token = undefined;
       response = await request();
     }
+    // A fresh token and still 401: from 26.8.2, the Admin API wants the audience of kc-admin-api.
+    if (response.status === 401) {
+      throw new DirectoryError(
+        `The Keycloak Admin API refused the service account token (HTTP 401). Keycloak 26.8.2 and later: add the client scope kc-admin-api to client ${clientId} as a Default scope.`,
+      );
+    }
     if (response.status === 404) return null;
     if (response.status === 403) {
       throw new DirectoryError(
