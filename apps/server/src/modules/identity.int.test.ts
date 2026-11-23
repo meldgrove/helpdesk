@@ -4,6 +4,7 @@ import { asc, eq } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { auditLog, categories, identityRequests, settings, ticketEvents } from "../db/schema";
 import { syncIdentityRequests } from "../identity/service";
+import { logger } from "../logger";
 import { createUser, request, resetDatabase } from "../test/helpers";
 
 vi.mock("../auth/resolve", () => import("../test/resolve-mock"));
@@ -270,13 +271,17 @@ describe("identity requests", () => {
     });
     expect(await getDb().select().from(identityRequests)).toEqual([]);
 
+    // IAM takes no requests right now: kept, unconfirmed, for the worker to send later.
     stubIam({ "POST identity-requests": () => ({ status: 403, body: { error: { message: "Off." } } }) });
+    const offKey = randomUUID();
     const off = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
       userId: operator.id,
-      body: { ...PERSON, submissionKey: randomUUID() },
+      body: { ...PERSON, submissionKey: offKey },
     });
-    expect(off.status).toBe(409);
-    expect(off.body.error.message).toBe("Off.");
+    expect(off.status).toBe(202);
+    expect(off.body.identityRequests).toEqual([
+      expect.objectContaining({ id: offKey, status: "sending", lastError: "Off." }),
+    ]);
 
     const key = currentKey;
     stubIam({
@@ -292,7 +297,9 @@ describe("identity requests", () => {
       userId: operator.id,
     });
     expect(cancelled.status).toBe(200);
-    expect(cancelled.body.identityRequests[0].status).toBe("cancelled");
+    expect(cancelled.body.identityRequests.find((item: { id: string }) => item.id === key).status).toBe(
+      "cancelled",
+    );
     expect(cancelled.body.events.at(-1)).toMatchObject({
       kind: "identity_request_changed",
       data: { to: "cancelled" },
@@ -449,5 +456,114 @@ describe("identity requests", () => {
     const rows = await getDb().select().from(identityRequests).orderBy(asc(identityRequests.createdAt));
     expect(rows.map((row) => row.status)).toEqual(["open", "approved"]);
     expect(rows[0]!.checkedAt!.getTime()).toBeGreaterThan(new Date("2026-01-01T00:00:00Z").getTime());
+  });
+
+  it("delivers a send whose answer got lost exactly once, with the details first saved", async () => {
+    await setUpIam();
+    let stored: unknown = null;
+    let reachable = false;
+    const calls = stubIam({
+      "POST identity-requests": (body) => {
+        // IAM stores the first request it gets; the answer then gets lost on the way back.
+        stored ??= body;
+        if (!reachable) throw new Error("connection reset");
+        return { status: 200, body: iamRequest() };
+      },
+    });
+    const first = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    expect(first.status).toBe(202);
+    expect(first.body.identityRequests[0]).toMatchObject({ status: "sending", url: "" });
+    expect(first.body.events.map((event: { kind: string }) => event.kind)).not.toContain(
+      "identity_requested",
+    );
+
+    // Staff edit and send again with the same key: the saved details go, not the edited ones.
+    await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, firstName: "Edited", submissionKey: currentKey },
+    });
+    reachable = true;
+    expect(await syncIdentityRequests()).toBe(1);
+    const posts = calls.filter((call) => call.route === "POST identity-requests").map((call) => call.body);
+    expect(posts).toHaveLength(3);
+    for (const body of posts) expect(body).toEqual(stored);
+    expect(stored).toMatchObject({ firstName: "Grace", externalId: `helpdesk:${currentKey}` });
+
+    const [row] = await getDb().select().from(identityRequests);
+    expect(row).toMatchObject({
+      status: "open",
+      iamId: 12,
+      payload: null,
+      lastError: null,
+      name: "Grace Hopper",
+    });
+    const sent = await getDb().select().from(ticketEvents).where(eq(ticketEvents.kind, "identity_requested"));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.actorId).toBe(operator.id);
+  });
+
+  it("sends an unconfirmed request again from the ticket, and keeps a refusal on the ticket", async () => {
+    await setUpIam();
+    let answer: () => Reply = () => {
+      throw new Error("timeout");
+    };
+    stubIam({ "POST identity-requests": () => answer() });
+    await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    answer = () => ({
+      status: 422,
+      body: {
+        error: {
+          code: "validation_error",
+          message: "Check the highlighted fields",
+          fields: { personType: "This installation accepts no identity requests for interns." },
+        },
+      },
+    });
+    const again = await request("POST", `/api/v1/tickets/${number}/identity-requests/${currentKey}/send`, {
+      userId: operator.id,
+    });
+    expect(again.status).toBe(200);
+    expect(again.body.identityRequests[0]).toMatchObject({
+      status: "refused",
+      reason: "This installation accepts no identity requests for interns.",
+      lastError: null,
+    });
+    expect(again.body.events.at(-1)).toMatchObject({
+      kind: "identity_request_changed",
+      data: { to: "refused" },
+    });
+    const [row] = await getDb().select().from(identityRequests);
+    expect(row!.payload).toBeNull();
+  });
+
+  it("tells Sentry once when IAM has not confirmed a send for a day", async () => {
+    await setUpIam();
+    stubIam({
+      "POST identity-requests": () => {
+        throw new Error("down");
+      },
+    });
+    await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    const report = vi.spyOn(logger, "error");
+    expect(await syncIdentityRequests()).toBe(0);
+    expect(report).not.toHaveBeenCalled();
+    await getDb()
+      .update(identityRequests)
+      .set({ createdAt: new Date(Date.now() - 25 * 60 * 60_000) })
+      .where(eq(identityRequests.id, currentKey));
+    await syncIdentityRequests();
+    await syncIdentityRequests();
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]![0]).toEqual({ requestId: currentKey, hours: 24 });
+    report.mockRestore();
   });
 });

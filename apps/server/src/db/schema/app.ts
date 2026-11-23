@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { FormDefinition } from "@helpdesk/shared/form";
 import type { StoredAnswer } from "../../tickets/answers";
+import type { IamRequestCreate } from "../../identity/iam";
 import { users } from "./auth";
 
 const timestamps = {
@@ -203,9 +204,10 @@ export const notifications = pgTable(
 );
 
 /**
- * Requests to Meldgrove IAM for a new person, sent from a ticket. IAM keeps
- * the request (`iamId`); this row keeps what IAM last said, for the ticket.
- * The row's id is the submission key, sent to IAM as `helpdesk:<id>`.
+ * Requests to Meldgrove IAM for a new person, sent from a ticket. Saved
+ * before IAM is called (`sending`, with `payload`); once IAM confirmed it
+ * (`iamId`), this row keeps what IAM last said, for the ticket. The row's id
+ * is the submission key, sent to IAM as `helpdesk:<id>`.
  */
 export const identityRequests = pgTable(
   "identity_requests",
@@ -214,19 +216,26 @@ export const identityRequests = pgTable(
     ticketId: uuid("ticket_id")
       .notNull()
       .references(() => tickets.id, { onDelete: "cascade" }),
-    iamId: integer("iam_id").notNull(),
+    /** IAM's ID, once IAM confirmed the request. */
+    iamId: integer("iam_id"),
     /** The person's name, as sent. */
     name: text("name").notNull(),
     personType: text("person_type").notNull(),
-    /** open, approved, rejected or cancelled */
+    /** sending (not confirmed by IAM yet), refused (by IAM), open, approved, rejected or cancelled */
     status: text("status").notNull(),
     reason: text("reason").notNull().default(""),
     /** The person's status in IAM once approved. */
     personStatus: text("person_status"),
     workEmail: text("work_email"),
-    url: text("url").notNull(),
+    url: text("url").notNull().default(""),
     sentById: uuid("sent_by_id").references(() => users.id, { onDelete: "set null" }),
     checkedAt: timestamp("checked_at", { withTimezone: true }),
+    /** While sending: the exact details every delivery sends; dropped once IAM confirmed or refused them. */
+    payload: jsonb("payload").$type<IamRequestCreate>(),
+    /** While sending: why the last delivery got no clear answer. */
+    lastError: text("last_error"),
+    /** When Sentry heard that IAM had not confirmed the request for a day. */
+    alertedAt: timestamp("alerted_at", { withTimezone: true }),
     ...timestamps,
   },
   (table) => [

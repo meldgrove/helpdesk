@@ -69,7 +69,13 @@ tickets keep it. At least one category stays active.
   person, link someone who is already there, or reject the request. The
   ticket shows what became of it (asked every 5 minutes): approved with the
   work email, rejected with the reason, and when the accounts are ready. An
-  open request can be cancelled from the ticket.
+  open request can be cancelled from the ticket. When IAM does not answer
+  clearly (it is down, or the answer gets lost), the request is kept as
+  **Not confirmed by IAM yet**: **Send again** on the ticket, or the
+  helpdesk itself every 5 minutes, sends it with the details first saved, so
+  IAM gets one request. After a day without IAM's confirmation, Sentry
+  reports it once. A request IAM refuses later shows as **Refused by IAM**
+  with the reason; send a corrected one.
 
 ## Notifications
 

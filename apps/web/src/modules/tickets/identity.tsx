@@ -151,9 +151,12 @@ function RequestForm(props: {
   const send = useMutation({
     mutationFn: (input: IdentityRequestInput) =>
       api.post<TicketDetail>(`/tickets/${props.ticket.number}/identity-requests`, input),
-    onSuccess: (ticket) => {
+    onSuccess: (ticket, input) => {
       client.setQueryData(ticketKeys.detail(ticket.number), ticket);
-      toast.success(t("identitySent"));
+      // Saved, but IAM did not answer clearly: the card shows it, and the helpdesk goes on trying.
+      const sent = ticket.identityRequests.find((request) => request.id === input.submissionKey);
+      if (sent?.status === "sending") toast.warning(t("identityUnconfirmedToast"));
+      else toast.success(t("identitySent"));
       props.onSent();
     },
     onError: (error) => {
@@ -277,6 +280,17 @@ function RequestItem({ number, request }: { number: number; request: IdentityReq
   const t = useT(messages);
   const client = useQueryClient();
   const [confirming, setConfirming] = useState(false);
+  const resend = useMutation({
+    mutationFn: () => api.post<TicketDetail>(`/tickets/${number}/identity-requests/${request.id}/send`),
+    onSuccess: (ticket) => {
+      client.setQueryData(ticketKeys.detail(number), ticket);
+      const now = ticket.identityRequests.find((item) => item.id === request.id);
+      if (now?.status === "sending") toast.warning(t("identityStillUnconfirmed"));
+      else if (now?.status === "refused") toast.error(t("identityRefusedToast"));
+      else toast.success(t("identitySent"));
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
   const cancel = async () => {
     try {
       const ticket = await api.post<TicketDetail>(
@@ -293,10 +307,24 @@ function RequestItem({ number, request }: { number: number; request: IdentityReq
     <li className="grid gap-1 border-b pb-3 text-sm last:border-b-0 last:pb-0">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{request.name}</span>
-        <Badge variant={request.status === "rejected" ? "destructive" : "secondary"}>
+        <Badge
+          variant={
+            request.status === "rejected" || request.status === "refused"
+              ? "destructive"
+              : request.status === "sending"
+                ? "outline"
+                : "secondary"
+          }
+        >
           {t(`identity_${request.status}`)}
         </Badge>
       </div>
+      {request.status === "sending" ? (
+        <>
+          <p className="text-muted-foreground">{t("identityUnconfirmedHint")}</p>
+          {request.lastError ? <p>{t("identityLastError", { error: request.lastError })}</p> : null}
+        </>
+      ) : null}
       {request.personStatus ? (
         <p className="text-muted-foreground">{t("identityPerson", { status: request.personStatus })}</p>
       ) : null}
@@ -314,6 +342,12 @@ function RequestItem({ number, request }: { number: number; request: IdentityReq
               {t("identityOpenInIam")}
               <ExternalLink aria-hidden />
             </a>
+          </Button>
+        ) : null}
+        {request.status === "sending" ? (
+          <Button variant="outline" size="sm" disabled={resend.isPending} onClick={() => resend.mutate()}>
+            {resend.isPending ? <Spinner /> : null}
+            {t("identitySendAgain")}
           </Button>
         ) : null}
         {request.status === "open" ? (
