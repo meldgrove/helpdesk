@@ -15,6 +15,7 @@ const superadmin: Me = {
   image: null,
   notifyVia: "email",
   slackAvailable: false,
+  identityRequests: false,
 };
 
 const users: User[] = [

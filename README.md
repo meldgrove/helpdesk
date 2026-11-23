@@ -21,6 +21,9 @@ notes; requesters follow their requests and get emails at each step.
   answered and done; new tickets are posted to a Slack channel; assignees
   hear about their tickets by email or Slack direct message. Email over
   SMTP or MailerSend, set up in the app.
+- **Identity requests to Meldgrove IAM**: staff ask IAM for a new person
+  from a ticket, with a form filled in from its answers; the ticket shows
+  IAM's decision and when the accounts are ready.
 - English (US); request forms in English or German. Light and dark, works on
   phones.
 
@@ -42,7 +45,7 @@ Open http://localhost:5173 and sign in as `erin@example.org` (requester),
 `oscar@example.org` (operator), `alma@example.org` (admin) or
 `ada@example.org` (superadmin), password `helpdesk-dev`. Emails land in
 Mailpit at http://localhost:8028 once a superadmin sets up SMTP
-(`localhost`, port `1028`, no security) under Email & Slack.
+(`localhost`, port `1028`, no security) under Integrations.
 
 ## Documentation
 

@@ -15,6 +15,7 @@ import { ApiError } from "@/lib/api";
 import { ticketQuery, usePendingChange, useUpdateTicket, withChange, type TicketChange } from "./api";
 import { Answers } from "./answers";
 import { Composer } from "./composer";
+import { IdentityRequests } from "./identity";
 import { messages } from "./messages";
 import { TicketPanel } from "./ticket-panel";
 import { Timeline } from "./timeline-view";
@@ -94,6 +95,8 @@ function TicketView({ ticket: saved }: { ticket: TicketDetail }) {
               <Answers answers={ticket.answers} />
             </CardContent>
           </Card>
+
+          <IdentityRequests ticket={ticket} />
 
           <section aria-labelledby={headingId} className="grid gap-4">
             <h2 id={headingId} className="text-base font-semibold">

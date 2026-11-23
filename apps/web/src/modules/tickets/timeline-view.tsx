@@ -9,6 +9,7 @@ import {
   Sparkles,
   Tag,
   UserRound,
+  UserRoundPlus,
 } from "lucide-react";
 import type { Message, TicketEvent } from "@helpdesk/shared/api/tickets";
 import { AttachmentList } from "@/components/attachments";
@@ -30,6 +31,8 @@ const EVENT_ICON: Record<TicketEvent["kind"], LucideIcon> = {
   title_changed: Pencil,
   due_date_changed: CalendarDays,
   reopened: RotateCcw,
+  identity_requested: UserRoundPlus,
+  identity_request_changed: UserRoundPlus,
 };
 
 /** Messages and activity of a ticket, oldest first, on one line. */

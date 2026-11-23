@@ -13,7 +13,7 @@ export const navMessages = defineMessages({
     admin: "Administration",
     form: "Request form",
     people: "People",
-    integrations: "Email & Slack",
+    integrations: "Integrations",
     audit: "Audit log",
     updates: "Updates",
   },

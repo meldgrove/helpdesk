@@ -9,8 +9,11 @@ import { deliverDue, pruneNotifications } from "../notifications/deliver";
 import { NOTIFY_CHANNEL } from "../notifications/enqueue";
 import { directory } from "../directory";
 import { pruneUnusedUploads } from "../attachments/storage";
+import { syncIdentityRequests } from "../identity/service";
 
 const POLL_MS = 5_000;
+/** How often the worker asks IAM what became of identity requests. */
+const IDENTITY_SYNC_MINUTES = 5;
 
 export type Stop = () => Promise<void>;
 
@@ -49,8 +52,8 @@ function every({ task, monitor, minutes, firstDelayMs }: Schedule, job: () => Pr
 
 /**
  * The worker: sends emails and Slack messages (woken by NOTIFY, checking at
- * least every 5 seconds), syncs the directory (DIRECTORY=keycloak) and
- * removes old notifications. It survives a database restart: it logs
+ * least every 5 seconds), syncs the directory (DIRECTORY=keycloak), asks
+ * IAM about identity requests and removes old notifications. It survives a database restart: it logs
  * warnings and tries again with backoff (`db/outage.ts`).
  */
 export function startWorker(): Stop {
@@ -147,6 +150,17 @@ export function startWorker(): Stop {
       pruneNotifications,
     ),
   ];
+  stops.push(
+    every(
+      {
+        task: "identity-requests",
+        monitor: "helpdesk-identity-requests",
+        minutes: IDENTITY_SYNC_MINUTES,
+        firstDelayMs: 20_000,
+      },
+      syncIdentityRequests,
+    ),
+  );
   const { mode, sync } = directory();
   if (sync) {
     stops.push(

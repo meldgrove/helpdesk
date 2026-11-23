@@ -265,7 +265,7 @@ ticket texts or email addresses. Useful lines: `directory synced`, `access
 checked at sign-in` (with the role), `notification handled` and
 `notification not sent` (with the channel and the provider's error code).
 
-The superadmins' **Email & Slack** page lists recent deliveries with their
+The superadmins' **Integrations** page lists recent deliveries with their
 state and last error.
 
 ## Hardening

@@ -127,6 +127,24 @@ describe("describeEvent", () => {
     );
   });
 
+  it("follows identity requests to IAM", () => {
+    const name = "Grace Hopper";
+    expect(describeEvent(event("identity_requested", at, { name, to: "open" }), false, en)).toBe(
+      "Alma Berger asked IAM for an identity for Grace Hopper",
+    );
+    const iam = (to: string, reason: string | null = null) =>
+      describeEvent(event("identity_request_changed", at, { name, to, reason }, null), false, en);
+    expect(iam("approved")).toBe("IAM approved the identity request for Grace Hopper");
+    expect(iam("rejected", "No contract yet.")).toBe(
+      "IAM rejected the identity request for Grace Hopper: No contract yet.",
+    );
+    expect(iam("active")).toBe("The accounts of Grace Hopper are ready");
+    expect(iam("cancelled")).toBe("The identity request for Grace Hopper was cancelled");
+    expect(describeEvent(event("identity_request_changed", at, { name, to: "cancelled" }), false, en)).toBe(
+      "Alma Berger cancelled the identity request for Grace Hopper",
+    );
+  });
+
   it("describes creation, reopening and the title", () => {
     expect(describeEvent(event("created", at, { source: "staff" }), false, en)).toBe(
       "Alma Berger recorded the request",

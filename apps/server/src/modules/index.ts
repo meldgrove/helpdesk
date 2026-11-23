@@ -1,5 +1,6 @@
 import attachments from "./attachments";
 import form from "./form";
+import identity from "./identity";
 import integrations from "./integrations";
 import meta from "./meta";
 import people from "./people";
@@ -8,4 +9,14 @@ import tickets from "./tickets";
 import updates from "./updates";
 
 /** Routers mounted under /api/v1. */
-export const API_MODULES = [meta, form, requests, tickets, attachments, people, integrations, updates];
+export const API_MODULES = [
+  meta,
+  form,
+  requests,
+  tickets,
+  identity,
+  attachments,
+  people,
+  integrations,
+  updates,
+];

@@ -201,3 +201,36 @@ export const notifications = pgTable(
     index("idx_notifications_created").on(table.createdAt),
   ],
 );
+
+/**
+ * Requests to Meldgrove IAM for a new person, sent from a ticket. IAM keeps
+ * the request (`iamId`); this row keeps what IAM last said, for the ticket.
+ * The row's id is the submission key, sent to IAM as `helpdesk:<id>`.
+ */
+export const identityRequests = pgTable(
+  "identity_requests",
+  {
+    id: uuid("id").primaryKey(),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id, { onDelete: "cascade" }),
+    iamId: integer("iam_id").notNull(),
+    /** The person's name, as sent. */
+    name: text("name").notNull(),
+    personType: text("person_type").notNull(),
+    /** open, approved, rejected or cancelled */
+    status: text("status").notNull(),
+    reason: text("reason").notNull().default(""),
+    /** The person's status in IAM once approved. */
+    personStatus: text("person_status"),
+    workEmail: text("work_email"),
+    url: text("url").notNull(),
+    sentById: uuid("sent_by_id").references(() => users.id, { onDelete: "set null" }),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    index("idx_identity_requests_ticket").on(table.ticketId, table.createdAt),
+    index("idx_identity_requests_status").on(table.status),
+  ],
+);

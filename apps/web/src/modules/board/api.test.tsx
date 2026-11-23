@@ -55,6 +55,7 @@ function assigned(revision: number, number = TICKET.number): TicketDetail {
     answers: [],
     messages: [],
     events: [],
+    identityRequests: [],
   };
 }
 
