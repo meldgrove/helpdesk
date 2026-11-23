@@ -139,6 +139,9 @@ describe("describeEvent", () => {
       "IAM rejected the identity request for Grace Hopper: No contract yet.",
     );
     expect(iam("active")).toBe("The accounts of Grace Hopper are ready");
+    expect(iam("refused", "No interns.")).toBe(
+      "IAM refused the identity request for Grace Hopper: No interns.",
+    );
     expect(iam("cancelled")).toBe("The identity request for Grace Hopper was cancelled");
     expect(describeEvent(event("identity_request_changed", at, { name, to: "cancelled" }), false, en)).toBe(
       "Alma Berger cancelled the identity request for Grace Hopper",

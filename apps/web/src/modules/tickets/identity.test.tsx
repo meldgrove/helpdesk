@@ -125,6 +125,7 @@ describe("identity requests", () => {
           personType: "intern",
           status: "open",
           reason: "",
+          lastError: null,
           personStatus: null,
           workEmail: null,
           url: "https://iam.example.org/requests/4",
@@ -254,6 +255,123 @@ describe("identity requests", () => {
     await waitFor(() => expect(client.getQueryState(["identity-options"])?.status).toBe("error"));
     await waitFor(() => expect(screen.queryByText("Down")).not.toBeInTheDocument());
     expect(within(dialog).getByLabelText("First name")).toHaveValue("Gracie");
+  });
+
+  it("shows a send IAM has not confirmed, and sends it again", async () => {
+    me.current = operator;
+    const unconfirmed = {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Grace Hopper",
+      personType: "intern",
+      status: "sending" as const,
+      reason: "",
+      lastError: "Could not reach IAM. Try again later.",
+      personStatus: null,
+      workEmail: null,
+      url: "",
+      sentBy: "Hanna HR",
+      createdAt: "2026-11-23T10:00:00.000Z",
+      checkedAt: null,
+    };
+    const fetch = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response(
+          JSON.stringify(
+            ticket({
+              identityRequests: [
+                {
+                  ...unconfirmed,
+                  status: "open",
+                  lastError: null,
+                  url: "https://iam.example.org/requests/4",
+                },
+              ],
+            }),
+          ),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const user = userEvent.setup();
+    renderWithProviders(<IdentityRequests ticket={ticket({ identityRequests: [unconfirmed] })} />);
+    expect(screen.getByText("Not confirmed by IAM yet")).toBeVisible();
+    expect(screen.getByText("Last try: Could not reach IAM. Try again later.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Cancel request" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Send again" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    expect(fetch.mock.calls[0]![0]).toBe(
+      "/api/v1/tickets/12/identity-requests/11111111-1111-4111-8111-111111111111/send",
+    );
+  });
+
+  it("sends corrected details as a new request after IAM refused them", async () => {
+    me.current = operator;
+    let posts = 0;
+    const fetch = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url === "/api/v1/identity/options") return new Response(JSON.stringify(OPTIONS), { status: 200 });
+      posts += 1;
+      return posts === 1
+        ? new Response(
+            JSON.stringify({
+              error: {
+                code: "iam_refused",
+                message: "Check the highlighted fields",
+                fields: { personType: "No interns." },
+              },
+            }),
+            { status: 422 },
+          )
+        : new Response(JSON.stringify(ticket()), { status: 201 });
+    });
+    vi.stubGlobal("fetch", fetch);
+    const user = userEvent.setup();
+    renderWithProviders(<IdentityRequests ticket={ticket()} />);
+    await user.click(screen.getByRole("button", { name: "Request identity" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(await within(dialog).findByRole("button", { name: "Send to IAM" }));
+    expect(await within(dialog).findByText("No interns.")).toBeVisible();
+    await user.selectOptions(within(dialog).getByLabelText("Person type"), "volunteer");
+    await user.click(within(dialog).getByRole("button", { name: "Send to IAM" }));
+    await waitFor(() => expect(posts).toBe(2));
+    const keys = fetch.mock.calls
+      .filter(([, init]) => init?.method === "POST")
+      .map(([, init]) => (JSON.parse(String(init?.body)) as { submissionKey: string }).submissionKey);
+    expect(keys[0]).not.toBe(keys[1]);
+  });
+
+  it("keeps the key when the send fails for a reason that is not IAM's refusal", async () => {
+    me.current = operator;
+    let posts = 0;
+    const fetch = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url === "/api/v1/identity/options") return new Response(JSON.stringify(OPTIONS), { status: 200 });
+      posts += 1;
+      return posts === 1
+        ? new Response(
+            // Helpdesk's own check, e.g. after the answer to a saved send got lost: the key stays.
+            JSON.stringify({
+              error: {
+                code: "validation_error",
+                message: "Check",
+                fields: { firstName: "Enter the first name" },
+              },
+            }),
+            { status: 422 },
+          )
+        : new Response(JSON.stringify(ticket()), { status: 201 });
+    });
+    vi.stubGlobal("fetch", fetch);
+    const user = userEvent.setup();
+    renderWithProviders(<IdentityRequests ticket={ticket()} />);
+    await user.click(screen.getByRole("button", { name: "Request identity" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(await within(dialog).findByRole("button", { name: "Send to IAM" }));
+    await waitFor(() => expect(posts).toBe(1));
+    await user.click(within(dialog).getByRole("button", { name: "Send to IAM" }));
+    await waitFor(() => expect(posts).toBe(2));
+    const keys = fetch.mock.calls
+      .filter(([, init]) => init?.method === "POST")
+      .map(([, init]) => (JSON.parse(String(init?.body)) as { submissionKey: string }).submissionKey);
+    expect(keys[0]).toBe(keys[1]);
   });
 
   it("stays away while IAM is not set up and the ticket has no requests", () => {

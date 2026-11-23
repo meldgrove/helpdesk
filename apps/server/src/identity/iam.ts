@@ -22,6 +22,8 @@ export class IamError extends Error {
     message: string,
     /** IAM's messages by field, for `invalid`. */
     readonly fields?: Record<string, string>,
+    /** IAM's error code, e.g. `reference_reused`. */
+    readonly code?: string,
   ) {
     super(message);
     this.name = "IamError";
@@ -111,7 +113,12 @@ export function iamClient(stored: StoredIam) {
       case 404:
         throw new IamError("not_found", "IAM does not know this request.");
       case 409:
-        throw new IamError("closed", message ?? "IAM already decided this request.");
+        throw new IamError(
+          "closed",
+          message ?? "IAM already decided this request.",
+          undefined,
+          typeof data?.error?.code === "string" ? data.error.code : undefined,
+        );
       case 422:
         throw new IamError("invalid", message ?? "IAM refused the request.", data?.error?.fields);
       default:

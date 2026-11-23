@@ -103,7 +103,15 @@ export const identityRequestInputSchema = z
   });
 export type IdentityRequestInput = z.input<typeof identityRequestInputSchema>;
 
-export const IDENTITY_REQUEST_STATUSES = ["open", "approved", "rejected", "cancelled"] as const;
+/** `sending`: saved, IAM has not confirmed it yet. `refused`: IAM refused the details. The rest is IAM's status. */
+export const IDENTITY_REQUEST_STATUSES = [
+  "sending",
+  "refused",
+  "open",
+  "approved",
+  "rejected",
+  "cancelled",
+] as const;
 
 /** A request as a ticket shows it, with what IAM last said. */
 export const identityRequestSchema = z.object({
@@ -111,8 +119,10 @@ export const identityRequestSchema = z.object({
   name: z.string(),
   personType: z.string(),
   status: z.enum(IDENTITY_REQUEST_STATUSES),
-  /** Rejected: why. */
+  /** Rejected or refused: why. */
   reason: z.string(),
+  /** Sending: why IAM has not confirmed it yet. */
+  lastError: z.string().nullable(),
   /** Approved: the person's status in IAM (planned, onboarding, active, …). */
   personStatus: z.string().nullable(),
   workEmail: z.string().nullable(),

@@ -4,6 +4,7 @@ import { asc, eq } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { auditLog, categories, identityRequests, settings, ticketEvents } from "../db/schema";
 import { syncIdentityRequests } from "../identity/service";
+import { logger } from "../logger";
 import { createUser, request, resetDatabase } from "../test/helpers";
 
 vi.mock("../auth/resolve", () => import("../test/resolve-mock"));
@@ -260,23 +261,32 @@ describe("identity requests", () => {
         },
       }),
     });
+    const refusedKey = randomUUID();
     const refused = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
       userId: operator.id,
-      body: { ...PERSON, submissionKey: randomUUID() },
+      body: { ...PERSON, submissionKey: refusedKey },
     });
     expect(refused.status).toBe(422);
+    expect(refused.body.error.code).toBe("iam_refused");
     expect(refused.body.error.fields).toEqual({
       personType: "This installation accepts no identity requests for interns.",
     });
-    expect(await getDb().select().from(identityRequests)).toEqual([]);
+    // Never deleted: the ticket keeps it as refused, and its key is used up.
+    const [kept] = await getDb().select().from(identityRequests);
+    expect(kept).toMatchObject({ id: refusedKey, status: "refused", payload: null });
 
+    // IAM takes no requests right now: kept, unconfirmed, for the worker to send later.
     stubIam({ "POST identity-requests": () => ({ status: 403, body: { error: { message: "Off." } } }) });
+    const offKey = randomUUID();
     const off = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
       userId: operator.id,
-      body: { ...PERSON, submissionKey: randomUUID() },
+      body: { ...PERSON, submissionKey: offKey },
     });
-    expect(off.status).toBe(409);
-    expect(off.body.error.message).toBe("Off.");
+    expect(off.status).toBe(202);
+    expect(off.body.identityRequests.find((item: { id: string }) => item.id === offKey)).toMatchObject({
+      status: "sending",
+      lastError: "Off.",
+    });
 
     const key = currentKey;
     stubIam({
@@ -292,7 +302,9 @@ describe("identity requests", () => {
       userId: operator.id,
     });
     expect(cancelled.status).toBe(200);
-    expect(cancelled.body.identityRequests[0].status).toBe("cancelled");
+    expect(cancelled.body.identityRequests.find((item: { id: string }) => item.id === key).status).toBe(
+      "cancelled",
+    );
     expect(cancelled.body.events.at(-1)).toMatchObject({
       kind: "identity_request_changed",
       data: { to: "cancelled" },
@@ -449,5 +461,269 @@ describe("identity requests", () => {
     const rows = await getDb().select().from(identityRequests).orderBy(asc(identityRequests.createdAt));
     expect(rows.map((row) => row.status)).toEqual(["open", "approved"]);
     expect(rows[0]!.checkedAt!.getTime()).toBeGreaterThan(new Date("2026-01-01T00:00:00Z").getTime());
+  });
+
+  it("delivers a send whose answer got lost exactly once, with the details first saved", async () => {
+    await setUpIam();
+    let stored: unknown = null;
+    let reachable = false;
+    const calls = stubIam({
+      "POST identity-requests": (body) => {
+        // IAM stores the first request it gets; the answer then gets lost on the way back.
+        stored ??= body;
+        if (!reachable) throw new Error("connection reset");
+        return { status: 200, body: iamRequest() };
+      },
+    });
+    const first = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    expect(first.status).toBe(202);
+    expect(first.body.identityRequests[0]).toMatchObject({ status: "sending", url: "" });
+    expect(first.body.events.map((event: { kind: string }) => event.kind)).not.toContain(
+      "identity_requested",
+    );
+
+    // Staff edit and send again with the same key: the saved details go, not the edited ones.
+    await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, firstName: "Edited", submissionKey: currentKey },
+    });
+    reachable = true;
+    expect(await syncIdentityRequests()).toBe(1);
+    const posts = calls.filter((call) => call.route === "POST identity-requests").map((call) => call.body);
+    expect(posts).toHaveLength(3);
+    for (const body of posts) expect(body).toEqual(stored);
+    expect(stored).toMatchObject({ firstName: "Grace", externalId: `helpdesk:${currentKey}` });
+
+    const [row] = await getDb().select().from(identityRequests);
+    expect(row).toMatchObject({
+      status: "open",
+      iamId: 12,
+      payload: null,
+      lastError: null,
+      name: "Grace Hopper",
+    });
+    const sent = await getDb().select().from(ticketEvents).where(eq(ticketEvents.kind, "identity_requested"));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.actorId).toBe(operator.id);
+  });
+
+  it("sends an unconfirmed request again from the ticket, and keeps a refusal on the ticket", async () => {
+    await setUpIam();
+    let answer: () => Reply = () => {
+      throw new Error("timeout");
+    };
+    stubIam({ "POST identity-requests": () => answer() });
+    await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    answer = () => ({
+      status: 422,
+      body: {
+        error: {
+          code: "validation_error",
+          message: "Check the highlighted fields",
+          fields: { personType: "This installation accepts no identity requests for interns." },
+        },
+      },
+    });
+    const again = await request("POST", `/api/v1/tickets/${number}/identity-requests/${currentKey}/send`, {
+      userId: operator.id,
+    });
+    expect(again.status).toBe(200);
+    expect(again.body.identityRequests[0]).toMatchObject({
+      status: "refused",
+      reason: "This installation accepts no identity requests for interns.",
+      lastError: null,
+    });
+    expect(again.body.events.at(-1)).toMatchObject({
+      kind: "identity_request_changed",
+      data: { to: "refused" },
+    });
+    const [row] = await getDb().select().from(identityRequests);
+    expect(row!.payload).toBeNull();
+  });
+
+  it("tells Sentry once when IAM has not confirmed a send for a day", async () => {
+    await setUpIam();
+    stubIam({
+      "POST identity-requests": () => {
+        throw new Error("down");
+      },
+    });
+    await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    const report = vi.spyOn(logger, "error");
+    expect(await syncIdentityRequests()).toBe(0);
+    expect(report).not.toHaveBeenCalled();
+    await getDb()
+      .update(identityRequests)
+      .set({ createdAt: new Date(Date.now() - 25 * 60 * 60_000) })
+      .where(eq(identityRequests.id, currentKey));
+    await syncIdentityRequests();
+    await syncIdentityRequests();
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]![0]).toEqual({ requestId: currentKey, hours: 24 });
+    report.mockRestore();
+  });
+
+  it("never delivers one request twice at the same time", async () => {
+    await setUpIam();
+    let release: () => void = () => undefined;
+    let reachable = false;
+    const calls = stubIam({
+      "POST identity-requests": async () => {
+        if (!reachable) throw new Error("down");
+        // The worker's delivery is slow; Send again comes meanwhile.
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return { status: 201, body: iamRequest() };
+      },
+    });
+    await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    reachable = true;
+    const worker = syncIdentityRequests();
+    await vi.waitFor(() =>
+      expect(calls.filter((call) => call.route === "POST identity-requests")).toHaveLength(2),
+    );
+    const again = request("POST", `/api/v1/tickets/${number}/identity-requests/${currentKey}/send`, {
+      userId: operator.id,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Send again waits for the worker's delivery instead of sending a second one.
+    expect(calls.filter((call) => call.route === "POST identity-requests")).toHaveLength(2);
+    release();
+    expect(await worker).toBe(1);
+    expect((await again).status).toBe(200);
+    expect(calls.filter((call) => call.route === "POST identity-requests")).toHaveLength(2);
+    const sent = await getDb().select().from(ticketEvents).where(eq(ticketEvents.kind, "identity_requested"));
+    expect(sent).toHaveLength(1);
+  });
+
+  it("answers a retried send that IAM refuses with IAM's errors, and keeps it as refused", async () => {
+    await setUpIam();
+    let answer: () => Reply = () => {
+      throw new Error("down");
+    };
+    stubIam({ "POST identity-requests": () => answer() });
+    const first = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    expect(first.status).toBe(202);
+    // Send again without a clear answer: still unconfirmed.
+    const again = await request("POST", `/api/v1/tickets/${number}/identity-requests/${currentKey}/send`, {
+      userId: operator.id,
+    });
+    expect(again.status).toBe(202);
+    // IAM is busy with something else: an unknown conflict keeps it queued.
+    answer = () => ({ status: 409, body: { error: { code: "concurrent_change", message: "Try again." } } });
+    const busy = await request("POST", `/api/v1/tickets/${number}/identity-requests/${currentKey}/send`, {
+      userId: operator.id,
+    });
+    expect(busy.status).toBe(202);
+    expect(busy.body.identityRequests[0]).toMatchObject({ status: "sending", lastError: "Try again." });
+
+    answer = () => ({
+      status: 422,
+      body: { error: { code: "validation_error", message: "Check", fields: { personType: "No interns." } } },
+    });
+    const retried = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    expect(retried.status).toBe(422);
+    expect(retried.body.error.fields).toEqual({ personType: "No interns." });
+    const [row] = await getDb().select().from(identityRequests);
+    expect(row).toMatchObject({ status: "refused", reason: "No interns.", payload: null });
+    // Sent again with that key: still refused, for the dialog to start a new request.
+    const once = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    expect(once.status).toBe(409);
+    expect(once.body.error.code).toBe("iam_refused");
+  });
+
+  it("keeps a saved request unconfirmed while IAM is not set up, and tells a refused key from that", async () => {
+    await setUpIam();
+    stubIam({
+      "POST identity-requests": () => {
+        throw new Error("down");
+      },
+    });
+    await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    await request("PUT", "/api/v1/integrations/iam", {
+      userId: superadmin.id,
+      body: { url: IAM, apiKey: null, mapping: MAPPING },
+    });
+    // Send again and a replay of the same key: still unconfirmed, with why.
+    const again = await request("POST", `/api/v1/tickets/${number}/identity-requests/${currentKey}/send`, {
+      userId: operator.id,
+    });
+    expect(again.status).toBe(202);
+    expect(again.body.identityRequests[0]).toMatchObject({
+      status: "sending",
+      lastError: "Set up IAM first (Integrations).",
+    });
+    const replay = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    expect(replay.status).toBe(202);
+    // A new request is refused at once: nothing to save without IAM.
+    const fresh = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: randomUUID() },
+    });
+    expect(fresh.status).toBe(409);
+    expect(fresh.body.error.code).toBe("iam_not_configured");
+    // A refused key answers as refused, whatever the settings say.
+    await getDb()
+      .update(identityRequests)
+      .set({ status: "refused", payload: null })
+      .where(eq(identityRequests.id, currentKey));
+    const refused = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    expect(refused.body.error.code).toBe("iam_refused");
+  });
+
+  it("tells Sentry about a stuck send also after IAM's key was removed", async () => {
+    await setUpIam();
+    stubIam({
+      "POST identity-requests": () => {
+        throw new Error("down");
+      },
+    });
+    await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    await request("PUT", "/api/v1/integrations/iam", {
+      userId: superadmin.id,
+      body: { url: IAM, apiKey: null, mapping: MAPPING },
+    });
+    await getDb()
+      .update(identityRequests)
+      .set({ createdAt: new Date(Date.now() - 25 * 60 * 60_000) })
+      .where(eq(identityRequests.id, currentKey));
+    const report = vi.spyOn(logger, "error");
+    await syncIdentityRequests();
+    expect(report).toHaveBeenCalledTimes(1);
+    report.mockRestore();
   });
 });

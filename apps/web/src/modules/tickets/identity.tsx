@@ -73,6 +73,14 @@ export function valuesFromAnswers(answers: Answer[], options: IdentityOptions): 
   };
 }
 
+/**
+ * Answers of a send that end its key for good: IAM refused the details, or
+ * the key belongs to another ticket. Anything else (Helpdesk's own checks,
+ * IAM not set up, a lost answer) keeps the key, so a saved request is never
+ * sent again under a second reference.
+ */
+const REFUSED = new Set(["iam_refused", "duplicate_submission"]);
+
 const optionsQuery = {
   queryKey: ["identity-options"] as const,
   queryFn: () => api.get<IdentityOptions>("/identity/options"),
@@ -86,6 +94,7 @@ function RequestDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSent: () => void;
+  onRefused: () => void;
 }) {
   const t = useT(messages);
   const tc = useT(common);
@@ -126,6 +135,7 @@ function RequestDialog(props: {
             submissionKey={props.submissionKey}
             onCancel={() => props.onOpenChange(false)}
             onSent={props.onSent}
+            onRefused={props.onRefused}
             onSendingChange={setSending}
           />
         )}
@@ -140,6 +150,7 @@ function RequestForm(props: {
   submissionKey: string;
   onCancel: () => void;
   onSent: () => void;
+  onRefused: () => void;
   onSendingChange: (sending: boolean) => void;
 }) {
   const t = useT(messages);
@@ -151,14 +162,21 @@ function RequestForm(props: {
   const send = useMutation({
     mutationFn: (input: IdentityRequestInput) =>
       api.post<TicketDetail>(`/tickets/${props.ticket.number}/identity-requests`, input),
-    onSuccess: (ticket) => {
+    onSuccess: (ticket, input) => {
       client.setQueryData(ticketKeys.detail(ticket.number), ticket);
-      toast.success(t("identitySent"));
+      // Saved, but IAM did not answer clearly: the card shows it, and the helpdesk goes on trying.
+      const sent = ticket.identityRequests.find((request) => request.id === input.submissionKey);
+      if (sent?.status === "sending") toast.warning(t("identityUnconfirmedToast"));
+      else toast.success(t("identitySent"));
       props.onSent();
     },
     onError: (error) => {
       setErrors(error instanceof ApiError && error.fields ? error.fields : {});
       toast.error(errorMessage(error));
+      // Refused for good (or the key belongs to another ticket): corrected
+      // details go as a new request. Any other error keeps the key, so a
+      // saved request is never sent twice under two references.
+      if (error instanceof ApiError && REFUSED.has(error.code)) props.onRefused();
     },
   });
   const { onSendingChange } = props;
@@ -277,6 +295,17 @@ function RequestItem({ number, request }: { number: number; request: IdentityReq
   const t = useT(messages);
   const client = useQueryClient();
   const [confirming, setConfirming] = useState(false);
+  const resend = useMutation({
+    mutationFn: () => api.post<TicketDetail>(`/tickets/${number}/identity-requests/${request.id}/send`),
+    onSuccess: (ticket) => {
+      client.setQueryData(ticketKeys.detail(number), ticket);
+      const now = ticket.identityRequests.find((item) => item.id === request.id);
+      if (now?.status === "sending") toast.warning(t("identityStillUnconfirmed"));
+      else if (now?.status === "refused") toast.error(t("identityRefusedToast"));
+      else toast.success(t("identitySent"));
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
   const cancel = async () => {
     try {
       const ticket = await api.post<TicketDetail>(
@@ -293,10 +322,24 @@ function RequestItem({ number, request }: { number: number; request: IdentityReq
     <li className="grid gap-1 border-b pb-3 text-sm last:border-b-0 last:pb-0">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{request.name}</span>
-        <Badge variant={request.status === "rejected" ? "destructive" : "secondary"}>
+        <Badge
+          variant={
+            request.status === "rejected" || request.status === "refused"
+              ? "destructive"
+              : request.status === "sending"
+                ? "outline"
+                : "secondary"
+          }
+        >
           {t(`identity_${request.status}`)}
         </Badge>
       </div>
+      {request.status === "sending" ? (
+        <>
+          <p className="text-muted-foreground">{t("identityUnconfirmedHint")}</p>
+          {request.lastError ? <p>{t("identityLastError", { error: request.lastError })}</p> : null}
+        </>
+      ) : null}
       {request.personStatus ? (
         <p className="text-muted-foreground">{t("identityPerson", { status: request.personStatus })}</p>
       ) : null}
@@ -314,6 +357,12 @@ function RequestItem({ number, request }: { number: number; request: IdentityReq
               {t("identityOpenInIam")}
               <ExternalLink aria-hidden />
             </a>
+          </Button>
+        ) : null}
+        {request.status === "sending" ? (
+          <Button variant="outline" size="sm" disabled={resend.isPending} onClick={() => resend.mutate()}>
+            {resend.isPending ? <Spinner /> : null}
+            {t("identitySendAgain")}
           </Button>
         ) : null}
         {request.status === "open" ? (
@@ -345,8 +394,9 @@ export function IdentityRequests({ ticket }: { ticket: TicketDetail }) {
   const t = useT(messages);
   const me = useMe();
   const [open, setOpen] = useState(false);
-  // Kept until a send succeeds: a send that was closed or failed without an
-  // answer, and is sent again, stays one request in IAM.
+  // Kept until a send is saved: a send that was closed or failed without an
+  // answer, and is sent again, stays one request in IAM. A refusal starts a
+  // new one, for the corrected details.
   const [submissionKey, setSubmissionKey] = useState(() => crypto.randomUUID());
   if (!me.identityRequests && ticket.identityRequests.length === 0) return null;
   return (
@@ -386,6 +436,7 @@ export function IdentityRequests({ ticket }: { ticket: TicketDetail }) {
             setOpen(false);
             setSubmissionKey(crypto.randomUUID());
           }}
+          onRefused={() => setSubmissionKey(crypto.randomUUID())}
         />
       ) : null}
     </Card>

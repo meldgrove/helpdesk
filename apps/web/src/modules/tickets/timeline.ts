@@ -101,6 +101,7 @@ export function describeEvent(event: TicketEvent, automatic: boolean, words: Eve
           ? t("evIdentityRejectedReason", { name, reason: event.data.reason })
           : t("evIdentityRejected", { name });
       if (to === "active") return t("evIdentityActive", { name });
+      if (to === "refused") return t("evIdentityRefused", { name, reason: event.data.reason ?? "–" });
       return event.actor
         ? t("evIdentityCancelled", { actor, name })
         : t("evIdentityCancelledInIam", { name });

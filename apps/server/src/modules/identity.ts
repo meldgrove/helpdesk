@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import {
   iamSettingsInputSchema,
   identityRequestInputSchema,
@@ -16,7 +16,7 @@ import { AppError, notFound, validationError } from "../http/errors";
 import { jsonBody, numberParam, requireStaff, requireSuperadmin } from "../http/middleware";
 import { loadTicketDetail } from "../tickets/queries";
 import { iamClient, iamConfigured, IamError } from "../identity/iam";
-import { cancelIdentityRequest, sendIdentityRequest } from "../identity/service";
+import { cancelIdentityRequest, resendIdentityRequest, sendIdentityRequest } from "../identity/service";
 
 /** Meldgrove IAM: the connection (superadmins) and identity requests from tickets (staff). */
 const router = new Hono<AppEnv>();
@@ -103,19 +103,32 @@ async function ticketDetail(number: number) {
   return ticket;
 }
 
+/** 201: IAM has the request. 202: saved, IAM has not confirmed it yet (the worker goes on trying). */
 router.post("/tickets/:number/identity-requests", async (c) => {
   const actor = requireStaff(c);
   const number = numberParam(c);
-  await sendIdentityRequest(actor, number, await jsonBody(c, identityRequestInputSchema));
-  return c.json(await ticketDetail(number), 201);
+  const outcome = await sendIdentityRequest(actor, number, await jsonBody(c, identityRequestInputSchema));
+  return c.json(await ticketDetail(number), outcome === "confirmed" ? 201 : 202);
+});
+
+function requestId(c: Context<AppEnv>): string {
+  const id = idSchema.safeParse(c.req.param("id"));
+  if (!id.success) throw notFound("Request not found");
+  return id.data;
+}
+
+/** Send again: a request IAM has not confirmed, with its stored details. */
+router.post("/tickets/:number/identity-requests/:id/send", async (c) => {
+  requireStaff(c);
+  const number = numberParam(c);
+  const outcome = await resendIdentityRequest(number, requestId(c));
+  return c.json(await ticketDetail(number), outcome === "confirmed" ? 200 : 202);
 });
 
 router.post("/tickets/:number/identity-requests/:id/cancel", async (c) => {
   const actor = requireStaff(c);
   const number = numberParam(c);
-  const id = idSchema.safeParse(c.req.param("id"));
-  if (!id.success) throw notFound("Request not found");
-  await cancelIdentityRequest(actor, number, id.data);
+  await cancelIdentityRequest(actor, number, requestId(c));
   return c.json(await ticketDetail(number));
 });
 

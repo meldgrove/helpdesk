@@ -73,18 +73,26 @@ change).
 
 `identity/iam.ts` calls IAM's API for other apps
 (`<url>/api/integration/v1/identity-requests`, IAM's `docs/api.md`) with
-the stored API key. `identity/service.ts` sends a request from a ticket
-(the dialog's submission key is the row's id and IAM's `externalId`,
-`helpdesk:<id>`, so a resend makes no second request), records
-`identity_requested` and `identity_request_changed` ticket events, and
-`syncIdentityRequests` (worker) asks IAM about requests that are open or
-approved without ready accounts (`active`). Each answer is saved under the
-row's lock and only when it is about this row (`externalId`) and not older
-than what the row knows (a decided request never opens again), so two
-workers, or a poll that crosses a cancel, add no event twice. A cancel first
-checks that the request at that ID is still this row's. The stored API key
-goes only to the address it was entered for: changing the address needs the
-key again.
+the stored API key. `identity/service.ts` saves a send before calling IAM
+(status `sending`, the exact details in `payload`; the dialog's submission
+key is the row's id and IAM's `externalId`, `helpdesk:<id>`) and delivers
+it: the send itself, "Send again", and the worker every 5 minutes, always
+with the stored details, so IAM keeps one request (IAM also refuses the
+reference with other details). Each delivery holds the row's lock while it
+asks IAM and writes the answer, so two deliveries of one request never
+overlap (the worker skips a locked row). IAM's confirmation sets `iam_id`, drops the
+payload and records `identity_requested`; a refusal (422, or 409
+`reference_reused` / `request_closed`) marks it `refused` (never deleted;
+the send answers `iam_refused` with IAM's field messages, and the dialog
+sends the corrected details under a new key); no
+clear answer keeps it `sending` with `last_error`, and after a day Sentry
+gets one error. `syncIdentityRequests` (worker) also asks IAM about
+requests that are open or approved without ready accounts (`active`). Each
+answer is saved under the row's lock and only when it is about this row
+(`externalId`) and not older than what the row knows (a decided request
+never opens again). A cancel first checks that the request at that ID is
+still this row's. The stored API key goes only to the address it was
+entered for: changing the address needs the key again.
 
 ## Notifications
 
