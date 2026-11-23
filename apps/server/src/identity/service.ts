@@ -184,8 +184,9 @@ type Delivery =
  * the send, "Send again" and the worker never deliver the same request at
  * once, and IAM's answer is written in the same transaction. `wait`: wait
  * for another delivery to finish (people); the worker skips a locked row.
- * A refusal deletes a fresh send (`onRefusal: "delete"`, staff fix the
- * dialog) or keeps it as refused, without its details.
+ * A refusal deletes the send only when a person sends it and no delivery
+ * got as far as an unclear answer before (`attempts` 0): staff fix the
+ * dialog. Otherwise it stays on the ticket as refused, without its details.
  */
 async function deliver(
   id: string,
@@ -208,7 +209,7 @@ async function deliver(
     } catch (error) {
       if (!(error instanceof IamError)) throw error;
       if (isRefusal(error)) {
-        if (options.onRefusal === "delete") {
+        if (options.onRefusal === "delete" && row.attempts === 0) {
           await tx.delete(identityRequests).where(eq(identityRequests.id, id));
         } else {
           const reason = refusal(error);
@@ -234,7 +235,12 @@ async function deliver(
       }
       await tx
         .update(identityRequests)
-        .set({ lastError: error.message.slice(0, 1000), checkedAt: sql`now()`, updatedAt: sql`now()` })
+        .set({
+          lastError: error.message.slice(0, 1000),
+          attempts: sql`${identityRequests.attempts} + 1`,
+          checkedAt: sql`now()`,
+          updatedAt: sql`now()`,
+        })
         .where(eq(identityRequests.id, id));
       return { outcome: "unconfirmed", error };
     }
@@ -284,8 +290,15 @@ export async function sendIdentityRequest(
     .from(tickets)
     .where(eq(tickets.number, number));
   if (!ticket) throw notFound("Ticket not found");
-  // Not set up: nothing to save.
-  await call(async () => iamClient(await getStoredIam(db)));
+  const [saved] = await db
+    .select({ ticketId: identityRequests.ticketId })
+    .from(identityRequests)
+    .where(eq(identityRequests.id, input.submissionKey));
+  if (saved && saved.ticketId !== ticket.id)
+    throw conflict("This request was already sent", "duplicate_submission");
+  // Not set up and nothing saved yet: nothing to save. A saved request is
+  // delivered (or stays unconfirmed) whatever the settings say now.
+  if (!saved) await call(async () => iamClient(await getStoredIam(db)));
 
   const payload: IamRequestCreate = {
     externalId: externalId(input.submissionKey),
@@ -316,18 +329,18 @@ export async function sendIdentityRequest(
     .onConflictDoNothing()
     .returning();
   if (!created) {
-    // The same key again (a retry, a double click): deliver what was saved first.
-    const [saved] = await db
+    // Saved meanwhile by the same key on another ticket.
+    const [other] = await db
       .select({ ticketId: identityRequests.ticketId })
       .from(identityRequests)
       .where(eq(identityRequests.id, input.submissionKey));
-    if (saved && saved.ticketId !== ticket.id) {
+    if (other && other.ticketId !== ticket.id) {
       throw conflict("This request was already sent", "duplicate_submission");
     }
   }
   const delivery = await deliver(input.submissionKey, {
     wait: true,
-    onRefusal: created ? "delete" : "keep",
+    onRefusal: "delete",
   });
   if (delivery.outcome === "refused") throw refusedError(delivery.error);
   return delivery.outcome === "unconfirmed" ? "unconfirmed" : "confirmed";
@@ -344,7 +357,7 @@ export async function resendIdentityRequest(
     .innerJoin(tickets, eq(tickets.id, identityRequests.ticketId))
     .where(and(eq(identityRequests.id, id), eq(tickets.number, number)));
   if (!found) throw notFound("Request not found");
-  await call(async () => iamClient(await getStoredIam(getDb())));
+  // Not set up: the request stays unconfirmed, with why.
   const delivery = await deliver(id, { wait: true, onRefusal: "keep" });
   // A refusal stays on the ticket as refused; the ticket shows it.
   return delivery.outcome === "unconfirmed" ? "unconfirmed" : "confirmed";

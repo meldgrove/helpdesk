@@ -649,6 +649,54 @@ describe("identity requests", () => {
     expect(once.body.error.code).toBe("iam_refused");
   });
 
+  it("keeps a saved request unconfirmed while IAM is not set up, and tells a refused key from that", async () => {
+    await setUpIam();
+    stubIam({
+      "POST identity-requests": () => {
+        throw new Error("down");
+      },
+    });
+    await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    await request("PUT", "/api/v1/integrations/iam", {
+      userId: superadmin.id,
+      body: { url: IAM, apiKey: null, mapping: MAPPING },
+    });
+    // Send again and a replay of the same key: still unconfirmed, with why.
+    const again = await request("POST", `/api/v1/tickets/${number}/identity-requests/${currentKey}/send`, {
+      userId: operator.id,
+    });
+    expect(again.status).toBe(202);
+    expect(again.body.identityRequests[0]).toMatchObject({
+      status: "sending",
+      lastError: "Set up IAM first (Integrations).",
+    });
+    const replay = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    expect(replay.status).toBe(202);
+    // A new request is refused at once: nothing to save without IAM.
+    const fresh = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: randomUUID() },
+    });
+    expect(fresh.status).toBe(409);
+    expect(fresh.body.error.code).toBe("iam_not_configured");
+    // A refused key answers as refused, whatever the settings say.
+    await getDb()
+      .update(identityRequests)
+      .set({ status: "refused", payload: null })
+      .where(eq(identityRequests.id, currentKey));
+    const refused = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    expect(refused.body.error.code).toBe("iam_refused");
+  });
+
   it("tells Sentry about a stuck send also after IAM's key was removed", async () => {
     await setUpIam();
     stubIam({

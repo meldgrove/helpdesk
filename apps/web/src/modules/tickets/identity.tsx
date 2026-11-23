@@ -73,6 +73,9 @@ export function valuesFromAnswers(answers: Answer[], options: IdentityOptions): 
   };
 }
 
+/** Answers of a send that end it for good: IAM refused the details, or the key cannot be used again. */
+const REFUSED = new Set(["validation_error", "iam_refused", "iam_closed", "duplicate_submission"]);
+
 const optionsQuery = {
   queryKey: ["identity-options"] as const,
   queryFn: () => api.get<IdentityOptions>("/identity/options"),
@@ -165,8 +168,10 @@ function RequestForm(props: {
     onError: (error) => {
       setErrors(error instanceof ApiError && error.fields ? error.fields : {});
       toast.error(errorMessage(error));
-      // Refused (or never saved): the corrected details go as a new request.
-      if (error instanceof ApiError && error.status >= 400 && error.status < 500) props.onRefused();
+      // Refused for good (or the key belongs to another ticket): corrected
+      // details go as a new request. Any other error keeps the key, so a
+      // saved request is never sent twice under two references.
+      if (error instanceof ApiError && REFUSED.has(error.code)) props.onRefused();
     },
   });
   const { onSendingChange } = props;
