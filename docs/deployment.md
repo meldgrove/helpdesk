@@ -107,8 +107,8 @@ run the commands as root (`sudo -i`).
 
 - `GET /-/livez`: the web process runs.
 - `GET /-/readyz`: it reaches the database.
-- The worker touches `/tmp/worker-heartbeat` every few seconds;
-  `compose.yaml` checks its age.
+- The worker touches `/tmp/worker-heartbeat` every few seconds (at least
+  every 30 seconds while PostgreSQL restarts); `compose.yaml` checks its age.
 
 ## Upgrades
 

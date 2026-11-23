@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { getDb } from "../db/client";
+import { isDatabaseUnavailable } from "../db/outage";
 import { notifications, users } from "../db/schema";
 import { getStoredEmail, getStoredSlack } from "../core/settings";
 import { logger } from "../logger";
@@ -118,7 +119,11 @@ async function send(row: Row, transports: Transports): Promise<Outcome> {
   }
 }
 
-/** Sends due notifications; returns how many it handled. */
+/**
+ * Sends due notifications; returns how many it handled. Throws when the
+ * database becomes unreachable; a row claimed by then stays leased and is
+ * claimed again once its lease ends.
+ */
 export async function deliverDue(limit = 20): Promise<number> {
   let transports: Transports | undefined;
   let handled = 0;
@@ -149,6 +154,8 @@ export async function deliverDue(limit = 20): Promise<number> {
         "notification handled",
       );
     } catch (error) {
+      // The database is gone, not the email: keep the lease. When it ends, a claim sends the row again.
+      if (isDatabaseUnavailable(error)) throw error;
       const permanent = error instanceof DeliveryError && error.permanent;
       const finalAttempt = permanent || row.attempts >= MAX_ATTEMPTS;
       const message = error instanceof DeliveryError ? error.message : "Unexpected error while sending";

@@ -76,6 +76,17 @@ failures with backoff (5 attempts); permanent ones (a bad token, a rejected
 address) fail at once. A Slack direct message finds the person by email and
 falls back to an email.
 
+## Database restarts
+
+The Meldgrove Updater restarts PostgreSQL during updates. The worker (sending,
+directory sync, removing old notifications) and the web process's removal of
+unused uploads then log a warning and try again after 5, 10, 20, then every
+30 seconds (`db/outage.ts`); a scheduled job tries for up to 5 minutes, then
+waits for its next run. A notification claimed when the connection dropped
+keeps its lease and is sent again when the lease ends (2 minutes). A database
+unreachable for more than 5 minutes is an error in Sentry, once per outage.
+Other errors are reported as before.
+
 ## Sign-in and roles
 
 Better Auth runs the OpenID Connect flow (generic OAuth, PKCE). Before a
