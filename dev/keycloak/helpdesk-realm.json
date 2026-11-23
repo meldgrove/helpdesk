@@ -49,6 +49,7 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
       "frontchannelLogout": true,
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "basic", "email", "kc-admin-api"],
       "redirectUris": [
         "http://localhost:3000/api/auth/callback/oidc",
         "http://localhost:5173/api/auth/callback/oidc"

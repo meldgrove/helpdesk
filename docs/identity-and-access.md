@@ -57,11 +57,19 @@ loses access at the next sync or sign-in.
    account roles** assign the role `view-users` of the client
    `realm-management`. (Or use another client for this:
    `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET`.)
-4. Set `DIRECTORY=keycloak` and `OIDC_ISSUER=https://<host>/realms/<realm>`.
+4. Keycloak 26.8.2 and later: under that client's **Client scopes**, add
+   `kc-admin-api` as a **Default** scope. The Admin API refuses tokens
+   without the audience it adds (HTTP 401).
+5. Set `DIRECTORY=keycloak` and `OIDC_ISSUER=https://<host>/realms/<realm>`.
 
 Superadmins can check the connection and start a sync on the **People**
 page. When the Admin API cannot be reached at a sign-in, the person keeps
-the role they had.
+the role they had; someone the app does not know yet cannot sign in.
+
+Upgrading Keycloak to 26.8.2 or later does not add `kc-admin-api` to
+existing clients. Add it (step 4) when you upgrade; until then roles stop
+changing, the sync fails with HTTP 401, and people the app does not know
+yet cannot sign in.
 
 ## Other providers (`DIRECTORY=oidc`)
 
