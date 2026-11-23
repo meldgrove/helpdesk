@@ -103,10 +103,13 @@ function RequestDialog(props: {
           <DialogTitle>{t("identityDialogTitle")}</DialogTitle>
           <DialogDescription>{t("identityDialogDescription")}</DialogDescription>
         </DialogHeader>
-        {options.isPending ? (
-          <LoadingState />
-        ) : options.isError ? (
-          <ErrorState error={options.error} onRetry={() => void options.refetch()} />
+        {/* Once loaded, the form stays: a failed refetch in the background must not take it away. */}
+        {!options.data ? (
+          options.isError ? (
+            <ErrorState error={options.error} onRetry={() => void options.refetch()} />
+          ) : (
+            <LoadingState />
+          )
         ) : options.data.personTypes.length === 0 ? (
           <>
             <p className="text-sm">{t("identityNoTypes")}</p>
@@ -160,6 +163,8 @@ function RequestForm(props: {
   });
   const { onSendingChange } = props;
   useEffect(() => onSendingChange(send.isPending), [onSendingChange, send.isPending]);
+  // A form that goes away no longer holds the dialog open.
+  useEffect(() => () => onSendingChange(false), [onSendingChange]);
   const set = (key: keyof IdentityValues) => (value: string) =>
     setValues((current) => ({ ...current, [key]: value }));
   const submit = (event: FormEvent) => {

@@ -5,6 +5,17 @@ import type { IdentityOptions } from "@helpdesk/shared/api/identity";
 import type { Answer, TicketDetail } from "@helpdesk/shared/api/tickets";
 import type { Me } from "@helpdesk/shared/api/users";
 import { renderWithProviders } from "@/test-utils";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render } from "@testing-library/react";
+import type { ReactNode } from "react";
+
+/** Renders with a query client the test can drive. */
+function renderWithClient(ui: ReactNode) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return { ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>), client };
+}
 import { IdentityRequests, valuesFromAnswers } from "./identity";
 
 const me = vi.hoisted(() => ({ current: null as Me | null }));
@@ -215,6 +226,30 @@ describe("identity requests", () => {
     expect(screen.getByRole("dialog")).toBeVisible();
     answer(new Response(JSON.stringify(ticket()), { status: 201 }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("keeps the form when a later check of IAM's options fails", async () => {
+    me.current = operator;
+    let optionCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        optionCalls += 1;
+        return optionCalls === 1
+          ? new Response(JSON.stringify(OPTIONS), { status: 200 })
+          : new Response(JSON.stringify({ error: { code: "iam_unavailable", message: "Down" } }), {
+              status: 502,
+            });
+      }),
+    );
+    const user = userEvent.setup();
+    const { client } = renderWithClient(<IdentityRequests ticket={ticket()} />);
+    await user.click(screen.getByRole("button", { name: "Request identity" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByLabelText("First name")).toHaveValue("Grace");
+    await client.refetchQueries({ queryKey: ["identity-options"] });
+    await waitFor(() => expect(optionCalls).toBe(2));
+    expect(within(dialog).getByLabelText("First name")).toHaveValue("Grace");
   });
 
   it("stays away while IAM is not set up and the ticket has no requests", () => {
