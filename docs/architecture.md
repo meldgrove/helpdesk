@@ -78,8 +78,13 @@ the stored API key. `identity/service.ts` sends a request from a ticket
 `helpdesk:<id>`, so a resend makes no second request), records
 `identity_requested` and `identity_request_changed` ticket events, and
 `syncIdentityRequests` (worker) asks IAM about requests that are open or
-approved without ready accounts. Each answer is saved under the row's lock,
-so two workers add no event twice.
+approved without ready accounts (`active`). Each answer is saved under the
+row's lock and only when it is about this row (`externalId`) and not older
+than what the row knows (a decided request never opens again), so two
+workers, or a poll that crosses a cancel, add no event twice. A cancel first
+checks that the request at that ID is still this row's. The stored API key
+goes only to the address it was entered for: changing the address needs the
+key again.
 
 ## Notifications
 

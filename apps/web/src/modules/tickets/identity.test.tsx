@@ -157,6 +157,41 @@ describe("identity requests", () => {
     });
   });
 
+  it("sends a retry after a failed send as the same request, also after closing the dialog", async () => {
+    me.current = operator;
+    let posts = 0;
+    const fetch = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url === "/api/v1/identity/options") return new Response(JSON.stringify(OPTIONS), { status: 200 });
+      posts += 1;
+      return posts === 1
+        ? new Response(
+            JSON.stringify({ error: { code: "iam_unavailable", message: "Could not reach IAM." } }),
+            {
+              status: 502,
+            },
+          )
+        : new Response(JSON.stringify(ticket()), { status: 201 });
+    });
+    vi.stubGlobal("fetch", fetch);
+    const user = userEvent.setup();
+    renderWithProviders(<IdentityRequests ticket={ticket()} />);
+    await user.click(screen.getByRole("button", { name: "Request identity" }));
+    await user.click(
+      await within(await screen.findByRole("dialog")).findByRole("button", { name: "Send to IAM" }),
+    );
+    await waitFor(() => expect(posts).toBe(1));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Request identity" }));
+    await user.click(
+      await within(await screen.findByRole("dialog")).findByRole("button", { name: "Send to IAM" }),
+    );
+    await waitFor(() => expect(posts).toBe(2));
+    const keys = fetch.mock.calls
+      .filter(([, init]) => init?.method === "POST")
+      .map(([, init]) => (JSON.parse(String(init?.body)) as { submissionKey: string }).submissionKey);
+    expect(keys[0]).toBe(keys[1]);
+  });
+
   it("stays away while IAM is not set up and the ticket has no requests", () => {
     me.current = { ...operator, identityRequests: false };
     const { container } = renderWithProviders(<IdentityRequests ticket={ticket()} />);

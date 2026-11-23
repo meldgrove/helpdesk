@@ -82,8 +82,10 @@ const optionsQuery = {
 
 function RequestDialog(props: {
   ticket: TicketDetail;
+  submissionKey: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSent: () => void;
 }) {
   const t = useT(messages);
   const tc = useT(common);
@@ -112,7 +114,9 @@ function RequestDialog(props: {
           <RequestForm
             ticket={props.ticket}
             options={options.data}
-            onDone={() => props.onOpenChange(false)}
+            submissionKey={props.submissionKey}
+            onCancel={() => props.onOpenChange(false)}
+            onSent={props.onSent}
           />
         )}
       </DialogContent>
@@ -120,22 +124,26 @@ function RequestDialog(props: {
   );
 }
 
-function RequestForm(props: { ticket: TicketDetail; options: IdentityOptions; onDone: () => void }) {
+function RequestForm(props: {
+  ticket: TicketDetail;
+  options: IdentityOptions;
+  submissionKey: string;
+  onCancel: () => void;
+  onSent: () => void;
+}) {
   const t = useT(messages);
   const tc = useT(common);
   const id = useId();
   const client = useQueryClient();
   const [values, setValues] = useState(() => valuesFromAnswers(props.ticket.answers, props.options));
   const [errors, setErrors] = useState<Record<string, string>>({});
-  // One key per dialog: a retry after a lost answer sends the same request.
-  const [submissionKey] = useState(() => crypto.randomUUID());
   const send = useMutation({
     mutationFn: (input: IdentityRequestInput) =>
       api.post<TicketDetail>(`/tickets/${props.ticket.number}/identity-requests`, input),
     onSuccess: (ticket) => {
       client.setQueryData(ticketKeys.detail(ticket.number), ticket);
       toast.success(t("identitySent"));
-      props.onDone();
+      props.onSent();
     },
     onError: (error) => {
       setErrors(error instanceof ApiError && error.fields ? error.fields : {});
@@ -157,7 +165,7 @@ function RequestForm(props: { ticket: TicketDetail; options: IdentityOptions; on
       startDate: values.startDate || null,
       endDate: values.endDate || null,
       notes: values.notes,
-      submissionKey,
+      submissionKey: props.submissionKey,
     });
   };
   const text = (key: keyof IdentityValues, label: string, extra: { type?: string; hint?: string } = {}) => (
@@ -238,7 +246,7 @@ function RequestForm(props: { ticket: TicketDetail; options: IdentityOptions; on
         {errors.notes ? <FieldError>{errors.notes}</FieldError> : null}
       </Field>
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={props.onDone}>
+        <Button type="button" variant="outline" onClick={props.onCancel}>
           {tc("cancel")}
         </Button>
         <Button type="submit" disabled={send.isPending}>
@@ -322,6 +330,9 @@ export function IdentityRequests({ ticket }: { ticket: TicketDetail }) {
   const t = useT(messages);
   const me = useMe();
   const [open, setOpen] = useState(false);
+  // Kept until a send succeeds: a send that was closed or failed without an
+  // answer, and is sent again, stays one request in IAM.
+  const [submissionKey, setSubmissionKey] = useState(() => crypto.randomUUID());
   if (!me.identityRequests && ticket.identityRequests.length === 0) return null;
   return (
     <Card className="gap-4">
@@ -350,7 +361,18 @@ export function IdentityRequests({ ticket }: { ticket: TicketDetail }) {
           </ul>
         )}
       </CardContent>
-      {open ? <RequestDialog ticket={ticket} open={open} onOpenChange={setOpen} /> : null}
+      {open ? (
+        <RequestDialog
+          ticket={ticket}
+          submissionKey={submissionKey}
+          open={open}
+          onOpenChange={setOpen}
+          onSent={() => {
+            setOpen(false);
+            setSubmissionKey(crypto.randomUUID());
+          }}
+        />
+      ) : null}
     </Card>
   );
 }

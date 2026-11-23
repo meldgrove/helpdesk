@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { IdentityRequest, identityRequestInputSchema } from "@helpdesk/shared/api/identity";
 import { config } from "../config";
@@ -73,21 +73,32 @@ export async function identityRequestsOf(db: DbOrTx, ticketId: string): Promise<
   return rows.map(({ row, name, email }) => toView(row, email === null ? null : { name, email }));
 }
 
-/** The activity entries an answer of IAM adds: a decision, and accounts that became ready. */
-function changes(row: Row, answer: IamRequest): string[] {
+/**
+ * The activity entries an answer of IAM adds to what the row knows: a
+ * decision, and accounts that became ready. Null: the answer is older than
+ * the row (a decided request never opens again), so it must not be saved.
+ */
+function changes(row: Pick<Row, "status" | "personStatus">, answer: IamRequest): string[] | null {
+  if (row.status !== "open" && answer.status !== row.status) return null;
   const steps: string[] = [];
-  if (answer.status !== row.status) steps.push(answer.status);
-  const personStatus = answer.person?.status ?? null;
-  if (personStatus === "active" && row.personStatus !== "active") steps.push("active");
+  if (row.status === "open" && answer.status !== "open") steps.push(answer.status);
+  if (answer.person?.status === "active" && row.personStatus !== "active") steps.push("active");
   return steps;
 }
 
-/** Saves IAM's answer under the row's lock and notes what changed in the ticket's activity. */
-async function apply(id: string, answer: IamRequest, actorId: string | null): Promise<void> {
-  await getDb().transaction(async (tx) => {
+const externalId = (id: string) => `helpdesk:${id}`;
+
+/**
+ * Saves IAM's answer under the row's lock and notes what changed in the
+ * ticket's activity. Returns whether anything changed; an answer older than
+ * the row, or about another request, is not saved.
+ */
+async function apply(id: string, answer: IamRequest, actorId: string | null): Promise<boolean> {
+  return getDb().transaction(async (tx) => {
     const [row] = await tx.select().from(identityRequests).where(eq(identityRequests.id, id)).for("update");
-    if (!row) return;
+    if (!row || answer.externalId !== externalId(id)) return false;
     const steps = changes(row, answer);
+    if (steps === null) return false;
     await tx
       .update(identityRequests)
       .set({
@@ -110,6 +121,7 @@ async function apply(id: string, answer: IamRequest, actorId: string | null): Pr
         })),
       );
     }
+    return steps.length > 0;
   });
 }
 
@@ -133,7 +145,7 @@ export async function sendIdentityRequest(actor: UserPrincipal, number: number, 
   const client = await call(async () => iamClient(await getStoredIam(db)));
   const answer = await call(() =>
     client.create({
-      externalId: `helpdesk:${input.submissionKey}`,
+      externalId: externalId(input.submissionKey),
       externalUrl: `${config().APP_URL}/tickets/${ticket.number}`,
       requestedBy: { name: actor.name, email: actor.email },
       firstName: input.firstName,
@@ -176,6 +188,18 @@ export async function sendIdentityRequest(actor: UserPrincipal, number: number, 
       kind: "identity_requested",
       data: { name, to: answer.status },
     });
+    // A resend after IAM already decided: note the decision too.
+    const steps = changes({ status: "open", personStatus: null }, answer) ?? [];
+    if (steps.length > 0) {
+      await tx.insert(ticketEvents).values(
+        steps.map((to) => ({
+          ticketId: ticket.id,
+          actorId: null,
+          kind: "identity_request_changed",
+          data: { name, to, reason: to === "rejected" ? answer.reason || null : null },
+        })),
+      );
+    }
   });
 }
 
@@ -189,19 +213,25 @@ export async function cancelIdentityRequest(actor: UserPrincipal, number: number
     .where(and(eq(identityRequests.id, id), eq(tickets.number, number)));
   if (!found) throw notFound("Request not found");
   const client = await call(async () => iamClient(await getStoredIam(db)));
+  // The request at this ID must be ours: IAM's address may have changed since.
+  const current = await call(() => client.get(found.row.iamId));
+  if (current.externalId !== externalId(id)) {
+    throw conflict("IAM does not know this request any more.", "iam_not_found");
+  }
   const answer = await call(() => client.cancel(found.row.iamId));
   await apply(id, answer, actor.id);
 }
 
-/** Requests IAM may still change: open ones, and approved ones whose accounts are not ready yet. */
+/**
+ * Requests IAM may still change: open ones, and approved ones whose accounts
+ * are not ready yet (also a linked person who is offboarded or archived and
+ * may be onboarded again).
+ */
 const UNSETTLED = or(
   eq(identityRequests.status, "open"),
   and(
     eq(identityRequests.status, "approved"),
-    or(
-      isNull(identityRequests.personStatus),
-      inArray(identityRequests.personStatus, ["planned", "onboarding"]),
-    ),
+    or(isNull(identityRequests.personStatus), ne(identityRequests.personStatus, "active")),
   ),
 );
 
@@ -228,8 +258,12 @@ export async function syncIdentityRequests(limit = 100): Promise<number> {
       if (error.kind !== "not_found") break;
       continue;
     }
-    if (changes(row, answer).length > 0) changed += 1;
-    await apply(row.id, answer, null);
+    if (answer.externalId !== externalId(row.id)) {
+      // IAM's address changed: this ID is someone else's request there.
+      logger.warn({ requestId: row.id }, "IAM answered with another request");
+      continue;
+    }
+    if (await apply(row.id, answer, null)) changed += 1;
   }
   return changed;
 }

@@ -109,7 +109,8 @@ Staff can then request identities from tickets (above).
 
 Every operator, admin and superadmin can send requests. Staff check each
 request before it goes to IAM; IAM's approvers decide. To stop, remove the
-key here or revoke it in IAM.
+key here or revoke it in IAM. A new address needs the key again: the stored
+key goes only to the address it was entered for.
 
 ## Slack (superadmins)
 

@@ -12,7 +12,7 @@ import { audit } from "../core/audit";
 import { encryptSecret, secretHint } from "../core/crypto";
 import { getStoredIam, putSetting, type StoredIam } from "../core/settings";
 import type { AppEnv } from "../http/env";
-import { AppError, notFound } from "../http/errors";
+import { AppError, notFound, validationError } from "../http/errors";
 import { jsonBody, numberParam, requireStaff, requireSuperadmin } from "../http/middleware";
 import { loadTicketDetail } from "../tickets/queries";
 import { iamClient, iamConfigured, IamError } from "../identity/iam";
@@ -20,6 +20,8 @@ import { cancelIdentityRequest, sendIdentityRequest } from "../identity/service"
 
 /** Meldgrove IAM: the connection (superadmins) and identity requests from tickets (staff). */
 const router = new Hono<AppEnv>();
+
+const origin = (url: string) => (URL.canParse(url) ? new URL(url).origin : url);
 
 function iamView(stored: StoredIam): IamSettings {
   return { url: stored.url, apiKeyHint: stored.apiKeyHint, mapping: stored.mapping };
@@ -35,6 +37,10 @@ router.put("/integrations/iam", async (c) => {
   const input = await jsonBody(c, iamSettingsInputSchema);
   const stored = await getDb().transaction(async (tx) => {
     const current = await getStoredIam(tx);
+    // The stored key goes only to the address it was entered for.
+    if (input.apiKey === "" && current.apiKeyEncrypted && origin(current.url) !== origin(input.url)) {
+      throw validationError({ apiKey: "Enter the API key again: the address of IAM changed." });
+    }
     const next: StoredIam = {
       url: input.url.replace(/\/+$/, ""),
       apiKeyEncrypted:

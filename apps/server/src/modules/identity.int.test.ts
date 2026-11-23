@@ -30,7 +30,9 @@ const MAPPING = {
 };
 
 /** IAM's answers to the helpdesk, by "METHOD path" below /api/integration/v1/. */
-function stubIam(routes: Record<string, (body: unknown) => { status?: number; body: unknown }>) {
+type Reply = { status?: number; body: unknown };
+
+function stubIam(routes: Record<string, (body: unknown) => Reply | Promise<Reply>>) {
   const calls: { route: string; body: unknown; authorization: string | null }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -41,7 +43,7 @@ function stubIam(routes: Record<string, (body: unknown) => { status?: number; bo
       calls.push({ route, body, authorization: new Headers(init?.headers).get("authorization") });
       const handler = routes[route];
       if (!handler) return new Response(JSON.stringify({ error: { code: "not_found" } }), { status: 404 });
-      const reply = handler(body);
+      const reply = await handler(body);
       return new Response(JSON.stringify(reply.body), {
         status: reply.status ?? 200,
         headers: { "content-type": "application/json" },
@@ -51,9 +53,12 @@ function stubIam(routes: Record<string, (body: unknown) => { status?: number; bo
   return calls;
 }
 
+/** The submission key of the test's request; IAM answers about `helpdesk:<key>`. */
+let currentKey: string;
+
 const iamRequest = (overrides: Record<string, unknown> = {}) => ({
   id: 12,
-  externalId: "x",
+  externalId: `helpdesk:${currentKey}`,
   status: "open",
   createdAt: "2026-11-23T10:00:00.000Z",
   decidedAt: null,
@@ -81,6 +86,7 @@ async function setUpIam() {
 }
 
 beforeEach(async () => {
+  currentKey = randomUUID();
   await resetDatabase();
   requester = await createUser("requester", { name: "Erin Employee", email: "erin@example.org" });
   operator = await createUser("operator", { name: "Hanna HR", email: "hanna@example.org" });
@@ -103,6 +109,26 @@ beforeEach(async () => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the IAM connection", () => {
+  it("sends the stored key only to the address it was entered for", async () => {
+    await setUpIam();
+    const moved = await request("PUT", "/api/v1/integrations/iam", {
+      userId: superadmin.id,
+      body: { url: "https://other.example.org", apiKey: "", mapping: MAPPING },
+    });
+    expect(moved.status).toBe(422);
+    expect(moved.body.error.fields.apiKey).toContain("Enter the API key again");
+    const sameOrigin = await request("PUT", "/api/v1/integrations/iam", {
+      userId: superadmin.id,
+      body: { url: `${IAM}/iam`, apiKey: "", mapping: MAPPING },
+    });
+    expect(sameOrigin.status).toBe(200);
+    const withKey = await request("PUT", "/api/v1/integrations/iam", {
+      userId: superadmin.id,
+      body: { url: "https://other.example.org", apiKey: KEY, mapping: MAPPING },
+    });
+    expect(withKey.status).toBe(200);
+  });
+
   it("is set up by superadmins, keeps the key secret, and tests it", async () => {
     expect((await request("GET", "/api/v1/integrations/iam", { userId: operator.id })).status).toBe(403);
     const saved = await setUpIam();
@@ -157,7 +183,7 @@ describe("identity requests", () => {
       ).status,
     ).toBe(403);
 
-    const key = randomUUID();
+    const key = currentKey;
     const sent = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
       userId: operator.id,
       body: { ...PERSON, submissionKey: key },
@@ -252,9 +278,10 @@ describe("identity requests", () => {
     expect(off.status).toBe(409);
     expect(off.body.error.message).toBe("Off.");
 
-    const key = randomUUID();
+    const key = currentKey;
     stubIam({
       "POST identity-requests": () => ({ status: 201, body: iamRequest() }),
+      "GET identity-requests/12": () => ({ body: iamRequest() }),
       "POST identity-requests/12/cancel": () => ({ body: iamRequest({ status: "cancelled" }) }),
     });
     await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
@@ -286,5 +313,89 @@ describe("identity requests", () => {
     expect(invalid.status).toBe(422);
     expect(Object.keys(invalid.body.error.fields).sort()).toEqual(["endDate", "firstName"]);
     expect(calls).toEqual([]);
+  });
+
+  it("keeps a cancel when an older answer of IAM arrives after it", async () => {
+    await setUpIam();
+    let polling = false;
+    stubIam({
+      "POST identity-requests": () => ({ status: 201, body: iamRequest() }),
+      "GET identity-requests/12": async () => {
+        if (!polling) return { body: iamRequest() };
+        polling = false;
+        // Staff cancel while the worker's question is on its way; its answer is from before.
+        const cancelled = await request(
+          "POST",
+          `/api/v1/tickets/${number}/identity-requests/${currentKey}/cancel`,
+          { userId: operator.id },
+        );
+        expect(cancelled.status).toBe(200);
+        return { body: iamRequest() };
+      },
+      "POST identity-requests/12/cancel": () => ({ body: iamRequest({ status: "cancelled" }) }),
+    });
+    await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    polling = true;
+    expect(await syncIdentityRequests()).toBe(0);
+    const [row] = await getDb().select().from(identityRequests);
+    expect(row!.status).toBe("cancelled");
+    const changes = await getDb()
+      .select()
+      .from(ticketEvents)
+      .where(eq(ticketEvents.kind, "identity_request_changed"));
+    expect(changes.map((event) => event.data.to)).toEqual(["cancelled"]);
+  });
+
+  it("never takes an answer about another request, e.g. after IAM's address changed", async () => {
+    await setUpIam();
+    const calls = stubIam({
+      "POST identity-requests": () => ({ status: 201, body: iamRequest() }),
+      "GET identity-requests/12": () => ({
+        body: iamRequest({ externalId: "other-app:7", status: "rejected", reason: "Not yours" }),
+      }),
+      "POST identity-requests/12/cancel": () => ({ body: iamRequest({ status: "cancelled" }) }),
+    });
+    await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    expect(await syncIdentityRequests()).toBe(0);
+    const [row] = await getDb().select().from(identityRequests);
+    expect(row!.status).toBe("open");
+    const cancel = await request("POST", `/api/v1/tickets/${number}/identity-requests/${currentKey}/cancel`, {
+      userId: operator.id,
+    });
+    expect(cancel.status).toBe(409);
+    expect(calls.map((call) => call.route)).not.toContain("POST identity-requests/12/cancel");
+  });
+
+  it("notes a decision IAM made before its first answer, and asks until the accounts are ready", async () => {
+    await setUpIam();
+    let current = iamRequest({
+      status: "approved",
+      person: { status: "archived", workEmail: "grace@example.org", startDate: null },
+    });
+    stubIam({
+      "POST identity-requests": () => ({ status: 201, body: current }),
+      "GET identity-requests/12": () => ({ body: current }),
+    });
+    const sent = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey },
+    });
+    expect(sent.body.events.slice(-2).map((event: { kind: string }) => event.kind)).toEqual([
+      "identity_requested",
+      "identity_request_changed",
+    ]);
+    // A linked person who left before: IAM may onboard them again.
+    expect(await syncIdentityRequests()).toBe(0);
+    current = iamRequest({
+      status: "approved",
+      person: { status: "active", workEmail: "grace@example.org", startDate: null },
+    });
+    expect(await syncIdentityRequests()).toBe(1);
   });
 });
