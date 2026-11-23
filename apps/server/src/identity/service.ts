@@ -325,10 +325,10 @@ export async function sendIdentityRequest(
       .onConflictDoNothing();
     saved = await savedOn();
   }
+  // Gone with its ticket meanwhile.
+  if (!saved) throw notFound("Ticket not found");
   // The key belongs to a request on another ticket.
-  if (!saved || saved.ticketId !== ticket.id) {
-    throw conflict("This request was already sent", "duplicate_submission");
-  }
+  if (saved.ticketId !== ticket.id) throw conflict("This request was already sent", "duplicate_submission");
   // Whoever saved it, the saved details go: a retry never sends new ones.
   const delivery = await deliver(input.submissionKey, { wait: true });
   if (delivery.outcome === "refused") throw refusedError(delivery.error);
