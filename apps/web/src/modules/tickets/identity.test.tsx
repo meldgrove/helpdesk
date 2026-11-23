@@ -247,9 +247,13 @@ describe("identity requests", () => {
     await user.click(screen.getByRole("button", { name: "Request identity" }));
     const dialog = await screen.findByRole("dialog");
     expect(await within(dialog).findByLabelText("First name")).toHaveValue("Grace");
+    await user.clear(within(dialog).getByLabelText("First name"));
+    await user.type(within(dialog).getByLabelText("First name"), "Gracie");
     await client.refetchQueries({ queryKey: ["identity-options"] });
-    await waitFor(() => expect(optionCalls).toBe(2));
-    expect(within(dialog).getByLabelText("First name")).toHaveValue("Grace");
+    // The page has seen the failed check before the form is looked at again.
+    await waitFor(() => expect(client.getQueryState(["identity-options"])?.status).toBe("error"));
+    await waitFor(() => expect(screen.queryByText("Down")).not.toBeInTheDocument());
+    expect(within(dialog).getByLabelText("First name")).toHaveValue("Gracie");
   });
 
   it("stays away while IAM is not set up and the ticket has no requests", () => {
