@@ -7,7 +7,7 @@ type FailedQuery = Error & { query: string; params: unknown[] };
  * Drizzle's DrizzleQueryError, recognized by its fields rather than its class,
  * which a second copy of drizzle-orm would not share.
  */
-const isFailedQuery = (error: unknown): error is FailedQuery =>
+export const isFailedQuery = (error: unknown): error is FailedQuery =>
   error instanceof Error &&
   typeof (error as Partial<FailedQuery>).query === "string" &&
   Array.isArray((error as Partial<FailedQuery>).params);

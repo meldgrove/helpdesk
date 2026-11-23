@@ -4,7 +4,9 @@ import { getDb } from "../db/client";
 import { notifications, users } from "../db/schema";
 import { encryptSecret } from "../core/crypto";
 import { putSetting } from "../core/settings";
-import { createUser, resetDatabase } from "../test/helpers";
+import { isDatabaseUnavailable } from "../db/outage";
+import { logger } from "../logger";
+import { createUser, lockTable, resetDatabase } from "../test/helpers";
 import { setUpIntegrations } from "../test/integrations";
 import { deliverDue } from "./deliver";
 
@@ -31,6 +33,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 async function queue(values: Partial<typeof notifications.$inferInsert> = {}) {
@@ -104,6 +107,34 @@ describe("deliverDue", () => {
       attempts: 2,
       lastError: test.lastError,
     });
+  });
+
+  it("keeps the lease when the database restarts during a send, then sends again", async () => {
+    await setUpIntegrations(getDb());
+    const email = await queue();
+    const error = vi.spyOn(logger, "error");
+    let restart: Promise<void> | undefined;
+    answer = async () => {
+      if (!restart) {
+        // Recording the result waits for the lock and loses its connection.
+        const locked = await lockTable("notifications");
+        restart = locked.terminateWaiting();
+      }
+      return new Response(null, { status: 202 });
+    };
+    await expect(deliverDue()).rejects.toSatisfy(isDatabaseUnavailable);
+    await restart;
+    expect(await stateOf(email.id)).toMatchObject({ status: "sending", attempts: 1, lastError: null });
+    expect(error).not.toHaveBeenCalled();
+
+    // Claimed again once the lease ends, not before.
+    expect(await deliverDue()).toBe(0);
+    await getDb()
+      .update(notifications)
+      .set({ leaseUntil: new Date(Date.now() - 1000) })
+      .where(eq(notifications.id, email.id));
+    expect(await deliverDue()).toBe(1);
+    expect(await stateOf(email.id)).toMatchObject({ status: "sent", attempts: 2, lastError: null });
   });
 
   it("sends email over MailerSend and posts to the Slack channel", async () => {
