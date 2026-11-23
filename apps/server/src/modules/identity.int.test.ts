@@ -416,4 +416,38 @@ describe("identity requests", () => {
     expect(calls[0]!.body).toMatchObject({ externalId: `helpdesk:${currentKey}` });
     expect(await syncIdentityRequests()).toBe(1);
   });
+
+  it("goes on with the other requests when IAM fails for one", async () => {
+    await setUpIam();
+    const first = currentKey;
+    const second = randomUUID();
+    stubIam({
+      "POST identity-requests": (body) => {
+        const ref = (body as { externalId: string }).externalId;
+        return {
+          status: 201,
+          body: iamRequest({ id: ref === `helpdesk:${first}` ? 12 : 13, externalId: ref }),
+        };
+      },
+      "GET identity-requests/12": () => ({ status: 500, body: { error: { code: "internal_error" } } }),
+      "GET identity-requests/13": () => ({
+        body: iamRequest({ id: 13, externalId: `helpdesk:${second}`, status: "approved" }),
+      }),
+    });
+    for (const key of [first, second]) {
+      await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+        userId: operator.id,
+        body: { ...PERSON, submissionKey: key },
+      });
+    }
+    // The failing request was checked least recently, so it comes first.
+    await getDb()
+      .update(identityRequests)
+      .set({ checkedAt: new Date("2026-01-01T00:00:00Z") })
+      .where(eq(identityRequests.id, first));
+    expect(await syncIdentityRequests()).toBe(1);
+    const rows = await getDb().select().from(identityRequests).orderBy(asc(identityRequests.createdAt));
+    expect(rows.map((row) => row.status)).toEqual(["open", "approved"]);
+    expect(rows[0]!.checkedAt!.getTime()).toBeGreaterThan(new Date("2026-01-01T00:00:00Z").getTime());
+  });
 });

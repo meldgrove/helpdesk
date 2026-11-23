@@ -262,8 +262,9 @@ export async function syncIdentityRequests(limit = 100): Promise<number> {
     } catch (error) {
       if (!(error instanceof IamError)) throw error;
       logger.warn({ requestId: row.id, kind: error.kind }, "IAM did not answer about an identity request");
-      // A key or connection problem affects every request: try again next time.
-      if (error.kind !== "not_found") break;
+      // A connection, key or setting problem affects every request: try again next time.
+      if (error.kind === "unreachable" || error.kind === "unauthorized" || error.kind === "off") break;
+      // Anything else is about this request: the others still get their turn.
       await checkedNow(row.id);
       continue;
     }
