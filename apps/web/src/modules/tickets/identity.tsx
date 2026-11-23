@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, UserRoundPlus } from "lucide-react";
 import { toast } from "sonner";
@@ -90,8 +90,14 @@ function RequestDialog(props: {
   const t = useT(messages);
   const tc = useT(common);
   const options = useQuery({ ...optionsQuery, enabled: props.open });
+  // The dialog stays open while a send runs: one send at a time, and its answer lands here.
+  const [sending, setSending] = useState(false);
+  const change = (open: boolean) => {
+    if (!open && sending) return;
+    props.onOpenChange(open);
+  };
   return (
-    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+    <Dialog open={props.open} onOpenChange={change}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t("identityDialogTitle")}</DialogTitle>
@@ -117,6 +123,7 @@ function RequestDialog(props: {
             submissionKey={props.submissionKey}
             onCancel={() => props.onOpenChange(false)}
             onSent={props.onSent}
+            onSendingChange={setSending}
           />
         )}
       </DialogContent>
@@ -130,6 +137,7 @@ function RequestForm(props: {
   submissionKey: string;
   onCancel: () => void;
   onSent: () => void;
+  onSendingChange: (sending: boolean) => void;
 }) {
   const t = useT(messages);
   const tc = useT(common);
@@ -150,6 +158,8 @@ function RequestForm(props: {
       toast.error(errorMessage(error));
     },
   });
+  const { onSendingChange } = props;
+  useEffect(() => onSendingChange(send.isPending), [onSendingChange, send.isPending]);
   const set = (key: keyof IdentityValues) => (value: string) =>
     setValues((current) => ({ ...current, [key]: value }));
   const submit = (event: FormEvent) => {
@@ -246,7 +256,7 @@ function RequestForm(props: {
         {errors.notes ? <FieldError>{errors.notes}</FieldError> : null}
       </Field>
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={props.onCancel}>
+        <Button type="button" variant="outline" disabled={send.isPending} onClick={props.onCancel}>
           {tc("cancel")}
         </Button>
         <Button type="submit" disabled={send.isPending}>

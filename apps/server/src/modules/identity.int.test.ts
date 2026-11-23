@@ -362,9 +362,12 @@ describe("identity requests", () => {
       userId: operator.id,
       body: { ...PERSON, submissionKey: currentKey },
     });
+    const [before] = await getDb().select().from(identityRequests);
     expect(await syncIdentityRequests()).toBe(0);
     const [row] = await getDb().select().from(identityRequests);
     expect(row!.status).toBe("open");
+    // To the back of the queue, so other requests get their turn.
+    expect(row!.checkedAt!.getTime()).toBeGreaterThan(before!.checkedAt!.getTime());
     const cancel = await request("POST", `/api/v1/tickets/${number}/identity-requests/${currentKey}/cancel`, {
       userId: operator.id,
     });
@@ -396,6 +399,21 @@ describe("identity requests", () => {
       status: "approved",
       person: { status: "active", workEmail: "grace@example.org", startDate: null },
     });
+    expect(await syncIdentityRequests()).toBe(1);
+  });
+
+  it("takes a submission key in capitals as the same request", async () => {
+    await setUpIam();
+    const calls = stubIam({
+      "POST identity-requests": () => ({ status: 201, body: iamRequest() }),
+      "GET identity-requests/12": () => ({ body: iamRequest({ status: "rejected", reason: "No." }) }),
+    });
+    const sent = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
+      userId: operator.id,
+      body: { ...PERSON, submissionKey: currentKey.toUpperCase() },
+    });
+    expect(sent.status).toBe(201);
+    expect(calls[0]!.body).toMatchObject({ externalId: `helpdesk:${currentKey}` });
     expect(await syncIdentityRequests()).toBe(1);
   });
 });

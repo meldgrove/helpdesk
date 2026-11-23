@@ -94,7 +94,8 @@ export const identityRequestInputSchema = z
     startDate: dateOrNull,
     endDate: dateOrNull,
     notes: z.string().trim().max(5000).default(""),
-    submissionKey: idSchema,
+    // Lower case, as PostgreSQL returns a UUID: it is sent to IAM as the reference.
+    submissionKey: idSchema.transform((key) => key.toLowerCase()),
   })
   .refine((value) => !value.startDate || !value.endDate || value.endDate >= value.startDate, {
     path: ["endDate"],

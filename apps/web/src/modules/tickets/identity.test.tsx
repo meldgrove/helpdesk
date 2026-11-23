@@ -192,6 +192,31 @@ describe("identity requests", () => {
     expect(keys[0]).toBe(keys[1]);
   });
 
+  it("keeps the dialog open while a send runs", async () => {
+    me.current = operator;
+    let answer: (response: Response) => void = () => undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url === "/api/v1/identity/options"
+          ? new Response(JSON.stringify(OPTIONS), { status: 200 })
+          : new Promise<Response>((resolve) => {
+              answer = resolve;
+            }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<IdentityRequests ticket={ticket()} />);
+    await user.click(screen.getByRole("button", { name: "Request identity" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(await within(dialog).findByRole("button", { name: "Send to IAM" }));
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeVisible();
+    answer(new Response(JSON.stringify(ticket()), { status: 201 }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
   it("stays away while IAM is not set up and the ticket has no requests", () => {
     me.current = { ...operator, identityRequests: false };
     const { container } = renderWithProviders(<IdentityRequests ticket={ticket()} />);

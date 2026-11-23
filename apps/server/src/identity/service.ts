@@ -235,6 +235,14 @@ const UNSETTLED = or(
   ),
 );
 
+/** Moves a request IAM cannot answer about to the back of the queue, so the others still get their turn. */
+async function checkedNow(id: string): Promise<void> {
+  await getDb()
+    .update(identityRequests)
+    .set({ checkedAt: sql`now()` })
+    .where(eq(identityRequests.id, id));
+}
+
 /** Asks IAM what became of unsettled requests, least recently checked first. Returns how many changed. */
 export async function syncIdentityRequests(limit = 100): Promise<number> {
   const stored = await getStoredIam(getDb());
@@ -256,11 +264,13 @@ export async function syncIdentityRequests(limit = 100): Promise<number> {
       logger.warn({ requestId: row.id, kind: error.kind }, "IAM did not answer about an identity request");
       // A key or connection problem affects every request: try again next time.
       if (error.kind !== "not_found") break;
+      await checkedNow(row.id);
       continue;
     }
     if (answer.externalId !== externalId(row.id)) {
       // IAM's address changed: this ID is someone else's request there.
       logger.warn({ requestId: row.id }, "IAM answered with another request");
+      await checkedNow(row.id);
       continue;
     }
     if (await apply(row.id, answer, null)) changed += 1;
