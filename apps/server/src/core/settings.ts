@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { EMAIL_PROVIDERS, SMTP_SECURITY } from "@helpdesk/shared/api/integrations";
+import { iamMappingSchema } from "@helpdesk/shared/api/identity";
 import type { DbOrTx } from "../db/client";
 import { settings } from "../db/schema";
 
@@ -67,4 +68,18 @@ export type StoredSlack = z.infer<typeof storedSlackSchema>;
 export async function getStoredSlack(db: DbOrTx): Promise<StoredSlack> {
   const parsed = storedSlackSchema.safeParse((await getSetting(db, "slack")) ?? {});
   return parsed.success ? parsed.data : storedSlackSchema.parse({});
+}
+
+/** The connection to Meldgrove IAM: its address, the API key encrypted, and which question fills which field. */
+export const storedIamSchema = z.object({
+  url: z.string().default(""),
+  apiKeyEncrypted: z.string().nullable().default(null),
+  apiKeyHint: z.string().nullable().default(null),
+  mapping: iamMappingSchema.default(iamMappingSchema.parse({})),
+});
+export type StoredIam = z.infer<typeof storedIamSchema>;
+
+export async function getStoredIam(db: DbOrTx): Promise<StoredIam> {
+  const parsed = storedIamSchema.safeParse((await getSetting(db, "iam")) ?? {});
+  return parsed.success ? parsed.data : storedIamSchema.parse({});
 }

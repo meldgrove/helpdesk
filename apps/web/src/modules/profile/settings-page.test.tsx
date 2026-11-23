@@ -14,6 +14,7 @@ const operator: Me = {
   image: null,
   notifyVia: "email",
   slackAvailable: true,
+  identityRequests: false,
 };
 
 afterEach(() => vi.unstubAllGlobals());

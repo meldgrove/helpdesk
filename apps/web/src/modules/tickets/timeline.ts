@@ -91,6 +91,20 @@ export function describeEvent(event: TicketEvent, automatic: boolean, words: Eve
       if (!to) return t("evDueRemoved", { actor });
       if (!from) return t("evDueSet", { actor, to: date(to) });
       return t("evDue", { actor, from: date(from), to: date(to) });
+    case "identity_requested":
+      return t("evIdentityRequested", { actor, name: event.data.name ?? "–" });
+    case "identity_request_changed": {
+      const name = event.data.name ?? "–";
+      if (to === "approved") return t("evIdentityApproved", { name });
+      if (to === "rejected")
+        return event.data.reason
+          ? t("evIdentityRejectedReason", { name, reason: event.data.reason })
+          : t("evIdentityRejected", { name });
+      if (to === "active") return t("evIdentityActive", { name });
+      return event.actor
+        ? t("evIdentityCancelled", { actor, name })
+        : t("evIdentityCancelledInIam", { name });
+    }
     case "assigned":
       if (automatic && to) return t("evAssignedAuto", { to });
       if (!to) return from ? t("evUnassigned", { actor, from }) : t("evAssignee", { actor });

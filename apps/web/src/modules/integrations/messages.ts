@@ -2,8 +2,35 @@ import { defineMessages } from "@/i18n";
 
 export const messages = defineMessages({
   en: {
-    title: "Email & Slack",
-    description: "How the helpdesk reaches people. Secrets are stored encrypted and never shown again.",
+    title: "Integrations",
+    description:
+      "How the helpdesk reaches people and other apps. Secrets are stored encrypted and never shown again.",
+
+    iamTitle: "Meldgrove IAM",
+    iamDescription:
+      "Staff ask IAM for new people from a ticket (Request identity). IAM decides; the ticket shows what became of the request.",
+    iamUrl: "Address of IAM",
+    iamUrlHint: "E.g. https://iam.example.org.",
+    iamKey: "API key",
+    iamKeyHint:
+      "In IAM: Admin › API keys. IAM's Admin › Settings chooses which person types may be requested.",
+    iamMapping: "Fill in from the form",
+    iamMappingHint:
+      "The request dialog starts with these answers of the ticket. Staff check and complete them before sending.",
+    iamNoQuestion: "No question",
+    iamSaved: "IAM settings saved",
+    iamTest: "Test connection",
+    iamTestSaveFirst: "The test uses the saved settings. Save your changes first.",
+    field_firstName: "First name",
+    field_lastName: "Last name",
+    field_personalEmail: "Personal email",
+    field_jobTitle: "Job title",
+    field_personType: "Person type",
+    field_team: "Team",
+    field_managerEmail: "Manager's work email",
+    field_startDate: "Start date",
+    field_endDate: "Last day",
+    field_notes: "Notes",
 
     emailTitle: "Email",
     emailDescription:

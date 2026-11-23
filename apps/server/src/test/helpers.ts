@@ -10,7 +10,7 @@ import { TEST_DATABASE_URL } from "./env";
 /** Empties every table between tests, then adds the default form and category. */
 export async function resetDatabase() {
   await getDb().execute(sql`
-    truncate table notifications, attachments, ticket_events, ticket_messages, tickets, categories, form_versions,
+    truncate table identity_requests, notifications, attachments, ticket_events, ticket_messages, tickets, categories, form_versions,
       audit_log, settings, sessions, accounts, verifications, auth_rate_limits, users
       restart identity cascade
   `);

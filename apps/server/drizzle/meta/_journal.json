@@ -15,6 +15,13 @@
       "when": 1794882251979,
       "tag": "0001_form_language",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795436017395,
+      "tag": "0002_identity_requests",
+      "breakpoints": true
     }
   ]
 }

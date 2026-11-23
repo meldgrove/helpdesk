@@ -2,6 +2,7 @@ import { Page, PageHeader } from "@meldgrove/ui/page";
 import { useT } from "@/i18n";
 import { DeliveriesCard } from "./deliveries-card";
 import { EmailCard } from "./email-card";
+import { IamCard } from "./iam-card";
 import { messages } from "./messages";
 import { SlackCard } from "./slack-card";
 
@@ -12,6 +13,7 @@ export function IntegrationsPage() {
       <PageHeader title={t("title")} description={t("description")} />
       <EmailCard />
       <SlackCard />
+      <IamCard />
       <DeliveriesCard />
     </Page>
   );

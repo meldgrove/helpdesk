@@ -7,6 +7,7 @@ import type {
   SlackSettings,
   SlackSettingsInput,
 } from "@helpdesk/shared/api/integrations";
+import type { IamSettings, IamSettingsInput } from "@helpdesk/shared/api/identity";
 import { api } from "@/lib/api";
 import { meQuery } from "@/hooks/use-me";
 
@@ -14,6 +15,7 @@ export type SlackChannel = { id: string; name: string; isPrivate: boolean; isMem
 
 export const integrationKeys = {
   email: ["integrations", "email"] as const,
+  iam: ["integrations", "iam"] as const,
   slack: ["integrations", "slack"] as const,
   channels: ["integrations", "slack", "channels"] as const,
   deliveries: ["integrations", "deliveries"] as const,
@@ -96,4 +98,31 @@ export function useDeliveries(limit: number, offset: number) {
         ? 5_000
         : false,
   });
+}
+
+export function useIamSettings() {
+  return useQuery({
+    queryKey: integrationKeys.iam,
+    queryFn: ({ signal }) => api.get<IamSettings>("/integrations/iam", undefined, signal),
+  });
+}
+
+export function useSaveIam() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: IamSettingsInput) => api.put<IamSettings>("/integrations/iam", input),
+    onSuccess: (settings) => {
+      client.setQueryData(integrationKeys.iam, settings);
+      // Whether tickets offer "Request identity".
+      return Promise.all([
+        client.invalidateQueries({ queryKey: ["identity-options"] }),
+        client.invalidateQueries({ queryKey: meQuery.queryKey }),
+      ]);
+    },
+  });
+}
+
+/** Asks IAM, with the saved settings, which person types it accepts. */
+export function useTestIam() {
+  return useMutation({ mutationFn: () => api.post<CheckResult>("/integrations/iam/test") });
 }

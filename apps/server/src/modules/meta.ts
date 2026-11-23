@@ -4,7 +4,9 @@ import { meUpdateSchema, type AuthConfig, type Me } from "@helpdesk/shared/api/u
 import { config } from "../config";
 import { getDb } from "../db/client";
 import { users } from "../db/schema";
-import { getStoredSlack } from "../core/settings";
+import { getStoredIam, getStoredSlack } from "../core/settings";
+import { iamConfigured } from "../identity/iam";
+import { isStaff } from "@helpdesk/shared/roles";
 import type { AppEnv } from "../http/env";
 import { jsonBody, requireUser } from "../http/middleware";
 import type { UserPrincipal } from "../auth/principal";
@@ -26,6 +28,7 @@ async function me(principal: UserPrincipal): Promise<Me> {
     image: principal.image,
     notifyVia: principal.notifyVia,
     slackAvailable: Boolean(slack.botTokenEncrypted),
+    identityRequests: isStaff(principal.role) && iamConfigured(await getStoredIam(getDb())),
   };
 }
 

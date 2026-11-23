@@ -2,6 +2,7 @@ import { z } from "zod";
 import { idSchema } from "./common";
 import { answersSchema, questionTypeSchema, validDate } from "../form";
 import { MAX_ATTACHMENTS_PER_MESSAGE, statusSchema, urgencySchema } from "../tickets";
+import { identityRequestSchema } from "./identity";
 
 export const personRefSchema = z.object({ id: idSchema, name: z.string(), email: z.string() });
 export type PersonRef = z.infer<typeof personRefSchema>;
@@ -104,6 +105,10 @@ export const EVENT_KINDS = [
   "title_changed",
   "due_date_changed",
   "reopened",
+  /** Staff asked IAM for a person (`name`). */
+  "identity_requested",
+  /** IAM answered (`name`, `to`: approved, rejected, cancelled, or the person's status, e.g. active). */
+  "identity_request_changed",
 ] as const;
 export const eventSchema = z.object({
   id: idSchema,
@@ -122,6 +127,8 @@ export const ticketDetailSchema = ticketSummarySchema.extend({
   answers: z.array(answerSchema),
   messages: z.array(messageSchema),
   events: z.array(eventSchema),
+  /** Requests to Meldgrove IAM for new people, sent from this ticket. */
+  identityRequests: z.array(identityRequestSchema),
 });
 export type TicketDetail = z.infer<typeof ticketDetailSchema>;
 

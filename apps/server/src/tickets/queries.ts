@@ -37,6 +37,7 @@ import {
 import { toAttachment } from "../attachments/storage";
 import type { UserPrincipal } from "../auth/principal";
 import { iso, isoRequired } from "../modules/util";
+import { identityRequestsOf } from "../identity/service";
 
 const requesters = alias(users, "requester");
 const assignees = alias(users, "assignee");
@@ -266,7 +267,7 @@ export async function loadTicketDetail(db: DbOrTx, number: number): Promise<Tick
   if (!row) return null;
   const ticket = row.ticket;
   const files = await attachmentsOf(db, ticket.id);
-  const [messages, eventRows] = await Promise.all([
+  const [messages, eventRows, identity] = await Promise.all([
     messagesOf(db, ticket.id, files, false),
     db
       .select({ event: ticketEvents, name: users.name, email: users.email })
@@ -274,6 +275,7 @@ export async function loadTicketDetail(db: DbOrTx, number: number): Promise<Tick
       .leftJoin(users, eq(users.id, ticketEvents.actorId))
       .where(eq(ticketEvents.ticketId, ticket.id))
       .orderBy(asc(ticketEvents.seq)),
+    identityRequestsOf(db, ticket.id),
   ]);
   const events: TicketEvent[] = eventRows.flatMap(({ event, name, email }) => {
     const kind = (EVENT_KINDS as readonly string[]).includes(event.kind)
@@ -298,6 +300,7 @@ export async function loadTicketDetail(db: DbOrTx, number: number): Promise<Tick
     answers: answersWithFiles(ticket, files),
     messages,
     events,
+    identityRequests: identity,
   };
 }
 

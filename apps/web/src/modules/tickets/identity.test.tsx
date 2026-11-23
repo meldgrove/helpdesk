@@ -1,0 +1,165 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { IdentityOptions } from "@helpdesk/shared/api/identity";
+import type { Answer, TicketDetail } from "@helpdesk/shared/api/tickets";
+import type { Me } from "@helpdesk/shared/api/users";
+import { renderWithProviders } from "@/test-utils";
+import { IdentityRequests, valuesFromAnswers } from "./identity";
+
+const me = vi.hoisted(() => ({ current: null as Me | null }));
+vi.mock("@/hooks/use-me", () => ({ useMe: () => me.current }));
+
+afterEach(() => vi.unstubAllGlobals());
+
+const operator: Me = {
+  id: "7d9f3c56-63c4-4a3e-9d1b-4f7f6e2f9a10",
+  email: "hanna@example.org",
+  name: "Hanna HR",
+  role: "operator",
+  image: null,
+  notifyVia: "email",
+  slackAvailable: false,
+  identityRequests: true,
+};
+
+const answer = (questionId: string, display: string[]): Answer => ({
+  questionId,
+  label: questionId,
+  type: "short_text",
+  display,
+  attachments: [],
+});
+
+const ANSWERS = [
+  answer("name-first", ["Grace"]),
+  answer("name-last", ["Hopper"]),
+  answer("kind", ["intern"]),
+  answer("team", ["research"]),
+  answer("start", ["2027-01-04"]),
+  answer("needs", ["Laptop", "Slack"]),
+];
+
+const OPTIONS: IdentityOptions = {
+  configured: true,
+  personTypes: [
+    { value: "intern", label: "Intern" },
+    { value: "volunteer", label: "Volunteer" },
+  ],
+  teams: [{ id: 3, name: "Research" }],
+  mapping: {
+    firstName: "name-first",
+    lastName: "name-last",
+    personalEmail: null,
+    jobTitle: null,
+    personType: "kind",
+    team: "team",
+    managerEmail: null,
+    startDate: "start",
+    endDate: null,
+    notes: "needs",
+  },
+};
+
+function ticket(overrides: Partial<TicketDetail> = {}): TicketDetail {
+  return {
+    id: "00000000-0000-4000-8000-000000000012",
+    number: 12,
+    title: "New team member",
+    status: "in_progress",
+    urgency: "normal",
+    category: null,
+    requester: null,
+    assignee: null,
+    dueDate: null,
+    createdAt: "2026-11-23T09:00:00.000Z",
+    updatedAt: "2026-11-23T09:00:00.000Z",
+    closedAt: null,
+    revision: 1,
+    messageCount: 0,
+    source: "form",
+    createdBy: null,
+    formVersion: 1,
+    answers: ANSWERS,
+    messages: [],
+    events: [],
+    identityRequests: [],
+    ...overrides,
+  };
+}
+
+describe("identity requests", () => {
+  it("fills the dialog from the mapped answers", () => {
+    expect(valuesFromAnswers(ANSWERS, OPTIONS)).toEqual({
+      firstName: "Grace",
+      lastName: "Hopper",
+      personalEmail: "",
+      jobTitle: "",
+      personType: "intern",
+      teamId: "3",
+      managerEmail: "",
+      startDate: "2027-01-04",
+      endDate: "",
+      notes: "Laptop, Slack",
+    });
+  });
+
+  it("sends a checked request to IAM and shows it on the ticket", async () => {
+    me.current = operator;
+    const sent = ticket({
+      identityRequests: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Grace Hopper",
+          personType: "intern",
+          status: "open",
+          reason: "",
+          personStatus: null,
+          workEmail: null,
+          url: "https://iam.example.org/requests/4",
+          sentBy: "Hanna HR",
+          createdAt: "2026-11-23T10:00:00.000Z",
+          checkedAt: null,
+        },
+      ],
+    });
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      const body = url === "/api/v1/identity/options" ? OPTIONS : sent;
+      return new Response(JSON.stringify(body), {
+        status: init?.method === "POST" ? 201 : 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+    const user = userEvent.setup();
+    renderWithProviders(<IdentityRequests ticket={ticket()} />);
+    expect(screen.getByText("None yet.")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Request identity" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByLabelText("First name")).toHaveValue("Grace");
+    await user.type(within(dialog).getByLabelText("Personal email"), "grace@personal.example.org");
+    await user.click(within(dialog).getByRole("button", { name: "Send to IAM" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const post = fetch.mock.calls.find(([, init]) => init?.method === "POST")!;
+    expect(post[0]).toBe("/api/v1/tickets/12/identity-requests");
+    expect(JSON.parse(String(post[1]?.body))).toMatchObject({
+      firstName: "Grace",
+      lastName: "Hopper",
+      personalEmail: "grace@personal.example.org",
+      personType: "intern",
+      teamId: 3,
+      startDate: "2027-01-04",
+      endDate: null,
+      notes: "Laptop, Slack",
+      submissionKey: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    });
+  });
+
+  it("stays away while IAM is not set up and the ticket has no requests", () => {
+    me.current = { ...operator, identityRequests: false };
+    const { container } = renderWithProviders(<IdentityRequests ticket={ticket()} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+});

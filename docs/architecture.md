@@ -13,7 +13,8 @@ One Docker image, one Node.js entry point (`apps/server/src/main.ts`);
   app. It also removes unused uploads every hour.
 - **worker**: sends queued emails and Slack messages (woken by PostgreSQL
   `NOTIFY`, at least every 5 seconds), syncs roles from Keycloak
-  (`DIRECTORY=keycloak`) and removes old notifications.
+  (`DIRECTORY=keycloak`), asks Meldgrove IAM about identity requests every
+  5 minutes and removes old notifications.
 - **migrate**: applies the Drizzle migrations under an advisory lock and
   creates the default form and category.
 - **all**: web and worker in one process.
@@ -39,8 +40,10 @@ PostgreSQL holds everything except uploaded files, which live in
 - `ticket_messages` (public replies and internal notes), `ticket_events`
   (activity, ordered by `seq`), `attachments`.
 - `notifications`: the outbox of emails and Slack messages.
-- `settings`: email and Slack settings (secrets encrypted with
+- `settings`: email, Slack and IAM settings (secrets encrypted with
   `ENCRYPTION_KEY`), the last directory sync.
+- `identity_requests`: requests to Meldgrove IAM sent from a ticket, with
+  what IAM last said.
 - `audit_log`: changes by admins and superadmins.
 
 ## The form
@@ -65,6 +68,18 @@ notifications (`notifications/enqueue.ts`, `Outbox`). Creating a ticket uses
 a submission key, so a repeated send creates one ticket. Board moves
 renumber the target column's ranks without touching the revision (a layout
 change).
+
+## Identity requests
+
+`identity/iam.ts` calls IAM's API for other apps
+(`<url>/api/integration/v1/identity-requests`, IAM's `docs/api.md`) with
+the stored API key. `identity/service.ts` sends a request from a ticket
+(the dialog's submission key is the row's id and IAM's `externalId`,
+`helpdesk:<id>`, so a resend makes no second request), records
+`identity_requested` and `identity_request_changed` ticket events, and
+`syncIdentityRequests` (worker) asks IAM about requests that are open or
+approved without ready accounts. Each answer is saved under the row's lock,
+so two workers add no event twice.
 
 ## Notifications
 

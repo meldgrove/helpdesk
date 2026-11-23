@@ -12,6 +12,8 @@ export const meSchema = z.object({
   notifyVia: notifyChannelSchema,
   /** Slack is set up, so `notifyVia: "slack"` can work. */
   slackAvailable: z.boolean(),
+  /** Meldgrove IAM is set up, so staff can request identities from tickets (false for requesters). */
+  identityRequests: z.boolean(),
 });
 export type Me = z.infer<typeof meSchema>;
 

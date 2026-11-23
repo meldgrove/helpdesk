@@ -1,14 +1,14 @@
 # Admin guide
 
 For admins and superadmins: the request form, categories, email, Slack,
-people and updates. Roles come from the sign-in provider's groups
+Meldgrove IAM, people and updates. Roles come from the sign-in provider's groups
 ([Identity and access](identity-and-access.md)).
 
 ## First steps
 
 1. Sign in with an address in `SUPERADMIN_EMAILS` (or as a member of the
    superadmin group).
-2. **Email & Slack** (superadmins): set up email, so requesters hear about
+2. **Integrations** (superadmins): set up email, so requesters hear about
    their requests, and Slack, if you want new tickets in a channel.
 3. **Request form → Categories**: name the kinds of requests you handle,
    e.g. "IT", "Finance", "Office". Optionally give each a default assignee.
@@ -62,6 +62,15 @@ tickets keep it. At least one category stays active.
 - **New ticket:** record a request for someone, e.g. after a phone call.
   The requester gets the same email as for the form.
 
+- **Identity requests:** when Meldgrove IAM is connected (below), staff ask
+  IAM for a new person from a ticket: **Request identity** opens a form
+  filled in from the ticket's answers; check it, complete it (e.g. the
+  personal email from the contract) and send it. IAM's approvers add the
+  person, link someone who is already there, or reject the request. The
+  ticket shows what became of it (asked every 5 minutes): approved with the
+  work email, rejected with the reason, and when the accounts are ready. An
+  open request can be cancelled from the ticket.
+
 ## Notifications
 
 | Who           | When                                                                | How                              |
@@ -83,6 +92,24 @@ message goes by email. Staff get no message about their own changes.
 
 Send a test email after saving. Emails say that replies to them are not
 read: people reply in the app.
+
+## Meldgrove IAM (superadmins)
+
+Staff can then request identities from tickets (above).
+
+1. In IAM, **Admin › Settings › Identity requests**: choose the person types
+   other apps may request (employee, intern, freelancer, volunteer,
+   external).
+2. In IAM, **Admin › API keys**: create a key named after the helpdesk and
+   copy it.
+3. Here, under **Integrations › Meldgrove IAM**: enter IAM's address and the
+   key, and choose which questions of the form fill in which field (first
+   name, last name, person type, start date, …). Save, then **Test
+   connection**: it lists the person types IAM accepts.
+
+Every operator, admin and superadmin can send requests. Staff check each
+request before it goes to IAM; IAM's approvers decide. To stop, remove the
+key here or revoke it in IAM.
 
 ## Slack (superadmins)
 
@@ -122,6 +149,6 @@ Setting up the update service: [Deployment](deployment.md#automatic-updates).
 
 ## Audit log
 
-Superadmins see who changed the form, categories, email, Slack and the
+Superadmins see who changed the form, categories, email, Slack, IAM and the
 directory sync, who installed updates or changed their channel, and when.
 It never holds passwords or tokens.
