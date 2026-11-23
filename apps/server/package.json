@@ -18,10 +18,10 @@
     "@helpdesk/shared": "*",
     "@hono/node-server": "2.1.8",
     "@sentry/node": "11.12.0",
-    "better-auth": "1.7.23",
+    "better-auth": "1.7.25",
     "drizzle-orm": "0.45.4",
-    "hono": "4.13.18",
-    "nodemailer": "10.5.0",
+    "hono": "4.13.19",
+    "nodemailer": "10.6.0",
     "pg": "8.23.1",
     "pino": "10.4.0",
     "zod": "4.6.7"
