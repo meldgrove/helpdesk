@@ -74,8 +74,8 @@ tickets keep it. At least one category stays active.
   **Not confirmed by IAM yet**: **Send again** on the ticket, or the
   helpdesk itself every 5 minutes, sends it with the details first saved, so
   IAM gets one request. After a day without IAM's confirmation, Sentry
-  reports it once. A request IAM refuses later shows as **Refused by IAM**
-  with the reason; send a corrected one.
+  reports it once. A request IAM refuses shows as **Refused by IAM** with the
+  reason; send a corrected one.
 
 ## Notifications
 

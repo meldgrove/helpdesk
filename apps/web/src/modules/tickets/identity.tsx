@@ -73,8 +73,13 @@ export function valuesFromAnswers(answers: Answer[], options: IdentityOptions): 
   };
 }
 
-/** Answers of a send that end it for good: IAM refused the details, or the key cannot be used again. */
-const REFUSED = new Set(["validation_error", "iam_refused", "iam_closed", "duplicate_submission"]);
+/**
+ * Answers of a send that end its key for good: IAM refused the details, or
+ * the key belongs to another ticket. Anything else (Helpdesk's own checks,
+ * IAM not set up, a lost answer) keeps the key, so a saved request is never
+ * sent again under a second reference.
+ */
+const REFUSED = new Set(["iam_refused", "duplicate_submission"]);
 
 const optionsQuery = {
   queryKey: ["identity-options"] as const,

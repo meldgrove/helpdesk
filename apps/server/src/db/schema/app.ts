@@ -234,8 +234,6 @@ export const identityRequests = pgTable(
     payload: jsonb("payload").$type<IamRequestCreate>(),
     /** While sending: why the last delivery got no clear answer. */
     lastError: text("last_error"),
-    /** Deliveries that got no clear answer: after one, a refusal keeps the request on the ticket. */
-    attempts: integer("attempts").notNull().default(0),
     /** When Sentry heard that IAM had not confirmed the request for a day. */
     alertedAt: timestamp("alerted_at", { withTimezone: true }),
     ...timestamps,

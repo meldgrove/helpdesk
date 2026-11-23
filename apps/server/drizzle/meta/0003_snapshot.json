@@ -1,5 +1,5 @@
 {
-  "id": "71d1cfcb-45dd-446e-8f8c-d2797f109104",
+  "id": "4459e6bb-3ece-455c-b39d-564a82d397a3",
   "prevId": "2db7f9d3-750f-4baa-994d-d80eb4ae3c69",
   "version": "7",
   "dialect": "postgresql",
@@ -949,13 +949,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
         },
         "alerted_at": {
           "name": "alerted_at",

@@ -261,15 +261,19 @@ describe("identity requests", () => {
         },
       }),
     });
+    const refusedKey = randomUUID();
     const refused = await request("POST", `/api/v1/tickets/${number}/identity-requests`, {
       userId: operator.id,
-      body: { ...PERSON, submissionKey: randomUUID() },
+      body: { ...PERSON, submissionKey: refusedKey },
     });
     expect(refused.status).toBe(422);
+    expect(refused.body.error.code).toBe("iam_refused");
     expect(refused.body.error.fields).toEqual({
       personType: "This installation accepts no identity requests for interns.",
     });
-    expect(await getDb().select().from(identityRequests)).toEqual([]);
+    // Never deleted: the ticket keeps it as refused, and its key is used up.
+    const [kept] = await getDb().select().from(identityRequests);
+    expect(kept).toMatchObject({ id: refusedKey, status: "refused", payload: null });
 
     // IAM takes no requests right now: kept, unconfirmed, for the worker to send later.
     stubIam({ "POST identity-requests": () => ({ status: 403, body: { error: { message: "Off." } } }) });
@@ -279,9 +283,10 @@ describe("identity requests", () => {
       body: { ...PERSON, submissionKey: offKey },
     });
     expect(off.status).toBe(202);
-    expect(off.body.identityRequests).toEqual([
-      expect.objectContaining({ id: offKey, status: "sending", lastError: "Off." }),
-    ]);
+    expect(off.body.identityRequests.find((item: { id: string }) => item.id === offKey)).toMatchObject({
+      status: "sending",
+      lastError: "Off.",
+    });
 
     const key = currentKey;
     stubIam({

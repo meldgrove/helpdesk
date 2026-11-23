@@ -314,7 +314,7 @@ describe("identity requests", () => {
         ? new Response(
             JSON.stringify({
               error: {
-                code: "validation_error",
+                code: "iam_refused",
                 message: "Check the highlighted fields",
                 fields: { personType: "No interns." },
               },
@@ -347,10 +347,15 @@ describe("identity requests", () => {
       posts += 1;
       return posts === 1
         ? new Response(
+            // Helpdesk's own check, e.g. after the answer to a saved send got lost: the key stays.
             JSON.stringify({
-              error: { code: "iam_not_configured", message: "Set up IAM first (Integrations)." },
+              error: {
+                code: "validation_error",
+                message: "Check",
+                fields: { firstName: "Enter the first name" },
+              },
             }),
-            { status: 409 },
+            { status: 422 },
           )
         : new Response(JSON.stringify(ticket()), { status: 201 });
     });
