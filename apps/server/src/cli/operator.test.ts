@@ -9,7 +9,12 @@ describe("the operator", () => {
   it("is created only by the command line, never by a route", () => {
     const callers = readdirSync(SRC, { recursive: true, encoding: "utf8" })
       .filter((file) => /\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file))
-      .filter((file) => /\boperator\(/.test(readFileSync(path.join(SRC, file), "utf8")))
+      // A call, or an import of operator (also under another name).
+      .filter((file) =>
+        /\boperator\(|import\s*\{[^}]*\boperator\b[^}]*\}\s*from\s*"[^"]*auth\/principal"/.test(
+          readFileSync(path.join(SRC, file), "utf8"),
+        ),
+      )
       .filter((file) => file !== path.join("auth", "principal.ts"));
     expect(callers.length).toBeGreaterThan(0);
     expect(
