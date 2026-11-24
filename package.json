@@ -26,6 +26,7 @@
     "test:integration": "npm run test:integration --workspace @helpdesk/server",
     "db:generate": "npm run db:generate --workspace @helpdesk/server",
     "db:migrate": "npm run db:migrate --workspace @helpdesk/server",
+    "cli": "npm run --silent cli --workspace @helpdesk/server --",
     "test:e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "devDependencies": {

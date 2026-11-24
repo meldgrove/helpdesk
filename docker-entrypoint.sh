@@ -7,6 +7,11 @@ case "$1" in
     # instrument.mjs starts Sentry before the app loads (tracing needs that).
     exec node --import /app/apps/server/dist/instrument.mjs /app/apps/server/dist/main.mjs "$@"
     ;;
+  cli)
+    # The operator command (docs/deployment.md): `cli settings …`.
+    shift
+    exec node /app/apps/server/dist/cli.mjs "$@"
+    ;;
   *)
     exec "$@"
     ;;

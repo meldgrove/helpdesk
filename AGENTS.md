@@ -21,13 +21,15 @@ npm workspaces, Node.js 26, strict TypeScript.
   (`api/*.ts`), roles, ticket constants, the form model and its show-if and
   answer rules (`form.ts`, used by both apps), error report redaction.
 
-One Docker image runs every process: `APP_ROLE` = `all | web | worker | migrate`.
+One Docker image runs every process: `APP_ROLE` = `all | web | worker | migrate`;
+its command `cli …` runs the operator command (`cli settings`).
 
 ## Layout
 
 ```
 apps/server/src/
   main.ts          entry; APP_ROLE selects the processes
+  cli.ts           entry of the operator command; cli/ has one module per setting name
   instrument.ts    starts Sentry before the app loads (node --import)
   config.ts        every environment variable (zod); read only via config()
   db/schema/       Drizzle schema (auth.ts, app.ts); db/client.ts, db/migrate.ts
@@ -38,6 +40,7 @@ apps/server/src/
   attachments/     file storage on disk
   worker/          delivery loop and scheduled jobs
   updates/         client for the Meldgrove Updater's API (in-app updates)
+  integrations/    email and Slack settings: shared by the routes and cli settings
   http/            app factory, middleware (requireUser/requireStaff/requireAdmin/requireSuperadmin), errors
   modules/         one file per API area: routes
 apps/web/src/      web app; modules/<area> holds each area's pages
@@ -61,6 +64,10 @@ packages/shared/src/  contracts, roles, tickets, form
   the same transaction (`Outbox`). The worker sends them.
 - **Secrets** (SMTP password, MailerSend and Slack tokens) are stored with
   `encryptSecret` and never returned or logged; responses show hints.
+- **Settings** of the Integrations page are saved by functions that the
+  routes and `cli settings` both call (`integrations/`,
+  `identity/settings.ts`); a new setting gets a module in `cli/` too. The
+  command takes secrets only on stdin.
 - **UI components** come from `@meldgrove/ui` (`@meldgrove/ui/<name>`, `cn`
   from `@meldgrove/ui/utils`); the app keeps no copies. A missing component or
   a fix goes into that package.

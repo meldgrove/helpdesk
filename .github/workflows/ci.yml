@@ -131,3 +131,7 @@ jobs:
       - name: The image starts its processes
         run: |
           docker run --rm --entrypoint node helpdesk:ci --import /app/apps/server/dist/instrument.mjs -e "process.exit(0)"
+      - name: The image has the operator command
+        run: |
+          docker run --rm helpdesk:ci cli help | grep -q "cli settings apply"
+          docker run --rm --entrypoint cli helpdesk:ci help | grep -q "cli settings apply"

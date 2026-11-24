@@ -1,8 +1,9 @@
 # Deployment
 
 For the person who runs the helpdesk on a Linux server, such as a VPS with
-Debian or Ubuntu: requirements, [setup](#setup), sign-in, upgrades,
-automatic updates, backups, Sentry and troubleshooting. To run it on Coolify
+Debian or Ubuntu: requirements, [setup](#setup),
+[settings from the command line](#settings-from-the-command-line), sign-in,
+upgrades, automatic updates, backups, Sentry and troubleshooting. To run it on Coolify
 instead, see [Coolify](coolify.md). Every environment
 variable is described in [Configuration](configuration.md); the form,
 categories, email and Slack are set up afterwards in the app
@@ -34,7 +35,7 @@ changes after 0.1.0) and the tag `preview`.
 
 | File                    | Contains                                                                           |
 | ----------------------- | ---------------------------------------------------------------------------------- |
-| `Dockerfile`            | The image. Its command (`all`, `web`, `worker`, `migrate`) picks the role.         |
+| `Dockerfile`            | The image. Its command (`all`, `web`, `worker`, `migrate`, `cli`) picks the role.  |
 | `compose.yaml`          | A one-off `migrate`, the web app (`web`), the `worker` and the optional `updater`. |
 | `compose.postgres.yaml` | Adds a PostgreSQL 18 container, for servers without a database of their own.       |
 | `compose.coolify.yaml`  | The same as `compose.yaml`, for [Coolify](coolify.md).                             |
@@ -100,8 +101,112 @@ run the commands as root (`sudo -i`).
 
 7. Open `APP_URL` and sign in.
 8. **Continue in the app** ([Admin guide](admin-guide.md)): set up email and
-   Slack, then the categories and the form.
+   Slack, then the categories and the form. Email, Slack and Meldgrove IAM
+   can also be set on the server instead:
+   [Settings from the command line](#settings-from-the-command-line).
 9. **Automatic updates:** [set them up](#setup-on-the-server).
+
+## Settings from the command line
+
+What superadmins set under **Integrations** (email, Slack, Meldgrove IAM)
+can also be set on the server, without a browser, with `cli settings`. It
+runs the same code as the page: the same checks, the same encryption, and
+an entry in the audit log with the actor `operator` and the command. In
+`/srv/helpdesk`:
+
+```sh
+docker compose run --rm -T migrate cli settings list
+```
+
+In a running container, such as a terminal on Coolify, the command is just
+`cli …` (`docker compose exec web cli settings list`).
+
+| Command                                  | What it does                                                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------------------ |
+| `cli settings list [--json]`             | Each setting: `set`, `not set` or `incomplete`, with hints such as `password …a1b2`  |
+| `cli settings show <name>`               | The setting as JSON, as the page reads it: secrets only as hints                     |
+| `cli settings show slack --channels`     | The channels the Slack bot can see, with their IDs                                   |
+| `cli settings apply <name>`              | Saves the JSON body on stdin, as the page's **Save** does; prints what `show` prints |
+| `cli settings test <name>`               | What the page's test button does                                                     |
+| `cli settings test email --to <address>` | Sends a test email to the address                                                    |
+| `cli help`                               | The commands and the setting names                                                   |
+
+- Secrets go only in the body on stdin, never in an argument (arguments show
+  in `ps` and the shell history). Nothing prints a saved secret.
+- `apply` replaces the whole setting, as the page does: start from what
+  `show` prints. As on the page, an empty or missing secret keeps the saved
+  one.
+- Exit codes: `0` done; `1` refused, with the page's message and the field
+  on stderr; `2` a wrong command or a body that is not JSON.
+- The helpdesk has no lists of settings and issues no tokens, so there is no
+  `cli settings remove` and no `cli tokens`.
+
+The bodies, as the Integrations page sends them:
+
+`email` over SMTP (`security`: `tls` on port 465, `starttls` on 587, or
+`none`). `{"provider": "none"}` turns email off.
+
+```json
+{
+  "provider": "smtp",
+  "fromAddress": "helpdesk@example.org",
+  "fromName": "Helpdesk",
+  "smtp": {
+    "host": "mail.example.org",
+    "port": 587,
+    "security": "starttls",
+    "username": "helpdesk@example.org",
+    "password": "<password>"
+  }
+}
+```
+
+`email` over MailerSend:
+
+```json
+{
+  "provider": "mailersend",
+  "fromAddress": "helpdesk@example.org",
+  "fromName": "Helpdesk",
+  "mailersend": { "token": "<API token>" }
+}
+```
+
+`slack`: the bot token (`xoxb-…`) and the channel for new tickets, an ID
+from `cli settings show slack --channels`. `"botToken": ""` keeps the saved
+token; `"botToken": null` disconnects Slack.
+
+```json
+{ "botToken": "<bot token>", "channelId": "C0123456789" }
+```
+
+`iam`: IAM's address, the API key (`iam_…`) and which question of the form
+fills which field of a request (question IDs; `cli settings show iam` shows
+the current ones, and the fields left out stay empty). `"apiKey": null`
+removes the key.
+
+```json
+{
+  "url": "https://iam.example.org",
+  "apiKey": "<API key>",
+  "mapping": { "firstName": "first_name", "lastName": "last_name", "personType": "person_type" }
+}
+```
+
+Then test it: `cli settings test slack`, `cli settings test iam`, or
+`cli settings test email --to you@example.org`.
+
+An AI with access to the server sets a key this way: it receives the secret
+as a file, pipes the body into `cli settings apply`, runs
+`cli settings test` and deletes the file. With `jq`, the secret never
+appears in an argument:
+
+```sh
+jq -n --rawfile token slack-token '{botToken: ($token | rtrimstr("\n")), channelId: "C0123456789"}' \
+  | docker compose run --rm -T migrate cli settings apply slack
+docker compose run --rm -T migrate cli settings test slack
+rm slack-token
+```
 
 ## Health checks
 

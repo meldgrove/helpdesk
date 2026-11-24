@@ -26,6 +26,13 @@ export class DeliveryError extends Error {
   }
 }
 
+/**
+ * Why a request got no answer. Never the error's own text: fetch quotes a
+ * header value it refuses, and that header carries the token.
+ */
+const requestFailure = (error: unknown) =>
+  error instanceof Error && error.name === "TimeoutError" ? "timed out" : "request failed";
+
 /** HTTP statuses that may pass: timeouts, rate limits, server errors. Other 4xx answers are permanent. */
 const temporaryStatus = (status: number) => status === 408 || status === 429 || status >= 500;
 
@@ -61,7 +68,7 @@ export function createMailerSendTransport(options: {
           signal: AbortSignal.timeout(TIMEOUT_MS),
         });
       } catch (error) {
-        throw new DeliveryError(`MailerSend: ${(error as Error).message}`);
+        throw new DeliveryError(`MailerSend: ${requestFailure(error)}`);
       }
       if (response.ok) return;
       const body = (await response.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 200);
@@ -119,9 +126,18 @@ export function createSmtpTransport(options: {
   };
 }
 
+/** Whether the stored settings name everything sending needs; a stored secret is not decrypted here. */
+export function emailConfigured(stored: StoredEmail): boolean {
+  if (!stored.fromAddress) return false;
+  if (stored.provider === "smtp") return Boolean(stored.smtp.host);
+  if (stored.provider === "mailersend") return Boolean(stored.mailersend.tokenEncrypted);
+  return false;
+}
+
 /** The email transport for the stored settings, or null when email is off. */
 export function emailTransportFor(stored: StoredEmail): EmailTransport | null {
-  if (stored.provider === "smtp" && stored.smtp.host && stored.fromAddress) {
+  if (!emailConfigured(stored)) return null;
+  if (stored.provider === "smtp") {
     return createSmtpTransport({
       host: stored.smtp.host,
       port: stored.smtp.port,
@@ -132,14 +148,11 @@ export function emailTransportFor(stored: StoredEmail): EmailTransport | null {
       fromName: stored.fromName,
     });
   }
-  if (stored.provider === "mailersend" && stored.mailersend.tokenEncrypted && stored.fromAddress) {
-    return createMailerSendTransport({
-      token: decryptSecret(stored.mailersend.tokenEncrypted),
-      from: stored.fromAddress,
-      fromName: stored.fromName,
-    });
-  }
-  return null;
+  return createMailerSendTransport({
+    token: decryptSecret(stored.mailersend.tokenEncrypted!),
+    from: stored.fromAddress,
+    fromName: stored.fromName,
+  });
 }
 
 /* Slack ------------------------------------------------------------------ */
@@ -178,7 +191,7 @@ export function createSlackApi(token: string, fetchImpl: typeof fetch = fetch): 
           signal: AbortSignal.timeout(TIMEOUT_MS),
         });
       } catch (error) {
-        throw new DeliveryError(`Slack ${method}: ${(error as Error).message}`);
+        throw new DeliveryError(`Slack ${method}: ${requestFailure(error)}`);
       }
       if (response.status === 429)
         throw new DeliveryError(`Slack ${method}: rate limited`, false, "ratelimited");

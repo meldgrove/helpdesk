@@ -9,7 +9,9 @@ Meldgrove IAM, people and updates. Roles come from the sign-in provider's groups
 1. Sign in with an address in `SUPERADMIN_EMAILS` (or as a member of the
    superadmin group).
 2. **Integrations** (superadmins): set up email, so requesters hear about
-   their requests, and Slack, if you want new tickets in a channel.
+   their requests, and Slack, if you want new tickets in a channel. Whoever
+   runs the server can set email, Slack and IAM with `cli settings` instead
+   ([Deployment](deployment.md#settings-from-the-command-line)).
 3. **Request form → Categories**: name the kinds of requests you handle,
    e.g. "IT", "Finance", "Office". Optionally give each a default assignee.
 4. **Request form → Questions**: ask what you need to know, with show-if
@@ -158,4 +160,5 @@ Setting up the update service: [Deployment](deployment.md#automatic-updates).
 
 Superadmins see who changed the form, categories, email, Slack, IAM and the
 directory sync, who installed updates or changed their channel, and when.
-It never holds passwords or tokens.
+Changes made on the server with `cli settings` show `operator` as the actor
+and the command after the summary. It never holds passwords or tokens.

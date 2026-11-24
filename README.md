@@ -20,7 +20,8 @@ notes; requesters follow their requests and get emails at each step.
 - **Email and Slack**: requesters get emails when a request is received,
   answered and done; new tickets are posted to a Slack channel; assignees
   hear about their tickets by email or Slack direct message. Email over
-  SMTP or MailerSend, set up in the app.
+  SMTP or MailerSend, set up in the app or with `cli settings` on the
+  server.
 - **Identity requests to Meldgrove IAM**: staff ask IAM for a new person
   from a ticket, with a form filled in from its answers; the ticket shows
   IAM's decision and when the accounts are ready.
@@ -50,7 +51,8 @@ Mailpit at http://localhost:8028 once a superadmin sets up SMTP
 ## Documentation
 
 - [Deployment](docs/deployment.md): a Linux server (Debian, Ubuntu),
-  sign-in, upgrades, automatic updates, backups, Sentry.
+  settings from the command line, sign-in, upgrades, automatic updates,
+  backups, Sentry.
 - [Coolify](docs/coolify.md): running it on Coolify instead.
 - [Configuration](docs/configuration.md): every environment variable.
 - [Identity and access](docs/identity-and-access.md): roles, Keycloak and

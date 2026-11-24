@@ -2,84 +2,39 @@ import { Hono, type Context } from "hono";
 import {
   iamSettingsInputSchema,
   identityRequestInputSchema,
-  type IamSettings,
   type IdentityOptions,
 } from "@helpdesk/shared/api/identity";
-import type { CheckResult } from "@helpdesk/shared/api/common";
 import { idSchema } from "@helpdesk/shared/api/common";
 import { getDb } from "../db/client";
-import { audit } from "../core/audit";
-import { encryptSecret, secretHint } from "../core/crypto";
-import { getStoredIam, putSetting, type StoredIam } from "../core/settings";
+import { getStoredIam } from "../core/settings";
 import type { AppEnv } from "../http/env";
-import { AppError, notFound, validationError } from "../http/errors";
+import { AppError, notFound } from "../http/errors";
 import { jsonBody, numberParam, requireStaff, requireSuperadmin } from "../http/middleware";
 import { loadTicketDetail } from "../tickets/queries";
 import { iamClient, iamConfigured, IamError } from "../identity/iam";
+import { readIam, saveIam, testIam } from "../identity/settings";
 import { cancelIdentityRequest, resendIdentityRequest, sendIdentityRequest } from "../identity/service";
 
-/** Meldgrove IAM: the connection (superadmins) and identity requests from tickets (staff). */
+/**
+ * Meldgrove IAM: the connection (superadmins; `cli settings` runs the same
+ * functions, identity/settings.ts) and identity requests from tickets (staff).
+ */
 const router = new Hono<AppEnv>();
-
-const origin = (url: string) => (URL.canParse(url) ? new URL(url).origin : url);
-
-function iamView(stored: StoredIam): IamSettings {
-  return { url: stored.url, apiKeyHint: stored.apiKeyHint, mapping: stored.mapping };
-}
 
 router.get("/integrations/iam", async (c) => {
   requireSuperadmin(c);
-  return c.json(iamView(await getStoredIam(getDb())));
+  return c.json(await readIam());
 });
 
 router.put("/integrations/iam", async (c) => {
   const actor = requireSuperadmin(c);
-  const input = await jsonBody(c, iamSettingsInputSchema);
-  const stored = await getDb().transaction(async (tx) => {
-    const current = await getStoredIam(tx);
-    // The stored key goes only to the address it was entered for.
-    if (input.apiKey === "" && current.apiKeyEncrypted && origin(current.url) !== origin(input.url)) {
-      throw validationError({ apiKey: "Enter the API key again: the address of IAM changed." });
-    }
-    const next: StoredIam = {
-      url: input.url.replace(/\/+$/, ""),
-      apiKeyEncrypted:
-        input.apiKey === null ? null : input.apiKey ? encryptSecret(input.apiKey) : current.apiKeyEncrypted,
-      apiKeyHint: input.apiKey === null ? null : input.apiKey ? secretHint(input.apiKey) : current.apiKeyHint,
-      mapping: input.mapping,
-    };
-    await putSetting(tx, "iam", next);
-    await audit(tx, actor, {
-      action: "integration.iam",
-      entityType: "integration",
-      entityId: "iam",
-      summary: iamConfigured(next) ? "Set up IAM for identity requests" : "Turned identity requests off",
-    });
-    return next;
-  });
-  return c.json(iamView(stored));
+  return c.json(await saveIam(actor, await jsonBody(c, iamSettingsInputSchema)));
 });
 
 /** Checks the saved connection: IAM answers with the person types it accepts. */
 router.post("/integrations/iam/test", async (c) => {
   requireSuperadmin(c);
-  const started = Date.now();
-  let result: CheckResult;
-  try {
-    const options = await iamClient(await getStoredIam(getDb())).options();
-    result = {
-      ok: true,
-      message:
-        options.personTypes.length === 0
-          ? "Connected. IAM accepts no identity requests yet: choose person types in IAM's Admin › Settings."
-          : `Connected. IAM accepts requests for: ${options.personTypes.map((type) => type.label).join(", ")}.`,
-      latencyMs: Date.now() - started,
-    };
-  } catch (error) {
-    if (!(error instanceof IamError)) throw error;
-    result = { ok: false, message: error.message, latencyMs: Date.now() - started };
-  }
-  return c.json(result);
+  return c.json(await testIam());
 });
 
 /** What the request dialog needs. Without a connection: `configured` is false. */
