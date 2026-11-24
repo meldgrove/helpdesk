@@ -96,11 +96,12 @@ describe("a failed email over SMTP", () => {
   });
 
   it.each([
-    ["HTTP/1.1 400 internal-only text", ""],
-    ["220 FTP server ready", "500 internal-only text"],
-  ])("quotes nothing of a server that is no mail server (%s)", async (greeting, answer) => {
+    ["HTTP/1.1 400 internal-only text", "", "EPROTOCOL: unexpected answer (CONN)"],
+    ["220 FTP server ready", "500 internal-only text", "SMTP 500: unexpected answer (HELO)"],
+  ])("quotes nothing of a server that is no mail server (%s)", async (greeting, answer, message) => {
     const port = await listen(greeting, () => answer);
-    await expect(send(port)).rejects.toThrow(/^EPROTOCOL: unexpected answer$/);
+    const error = await send(port).catch((thrown: Error) => thrown);
+    expect(error).toMatchObject({ message });
   });
 
   it("says why there was no answer", async () => {
