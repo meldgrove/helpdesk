@@ -66,6 +66,7 @@ export async function runCli(args: string[], io: CliIo): Promise<number> {
       case "help":
       case "--help":
       case "-h":
+        if (rest.length > 0) throw new UsageError("help takes no arguments.");
         io.out(help());
         return 0;
       case "settings":

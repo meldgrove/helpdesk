@@ -16,4 +16,7 @@ const { closeDb } = await import("./db/client");
 
 const code = await runCli(process.argv.slice(2), processIo());
 await closeDb().catch(() => undefined);
+// Exit only once the output is written: a pipe can take it slower than it comes.
+const flushed = (stream: NodeJS.WriteStream) => new Promise((resolve) => stream.write("", resolve));
+await Promise.all([flushed(process.stdout), flushed(process.stderr)]);
 process.exit(code);

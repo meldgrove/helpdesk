@@ -41,9 +41,10 @@ backups, Sentry, logs and hardening are the same as on a server: see
 
 In the resource, open **Terminal**, choose the `web` container and run
 `cli settings list`. `cli settings apply <name>` saves a JSON body from
-stdin, as the Integrations page does; paste the body, then press Ctrl-D on
-an empty line. The commands, the setting names and an example body for each
-are in [Deployment](deployment.md#settings-from-the-command-line).
+stdin, as the Integrations page does: paste the body (the terminal does not
+show it), then press Enter and Ctrl-D. The commands, the setting names and
+an example body for each are in
+[Deployment](deployment.md#settings-from-the-command-line).
 
 ## Upgrades
 

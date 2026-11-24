@@ -26,6 +26,13 @@ export class DeliveryError extends Error {
   }
 }
 
+/**
+ * Why a request got no answer. Never the error's own text: fetch quotes a
+ * header value it refuses, and that header carries the token.
+ */
+const requestFailure = (error: unknown) =>
+  error instanceof Error && error.name === "TimeoutError" ? "timed out" : "request failed";
+
 /** HTTP statuses that may pass: timeouts, rate limits, server errors. Other 4xx answers are permanent. */
 const temporaryStatus = (status: number) => status === 408 || status === 429 || status >= 500;
 
@@ -61,7 +68,7 @@ export function createMailerSendTransport(options: {
           signal: AbortSignal.timeout(TIMEOUT_MS),
         });
       } catch (error) {
-        throw new DeliveryError(`MailerSend: ${(error as Error).message}`);
+        throw new DeliveryError(`MailerSend: ${requestFailure(error)}`);
       }
       if (response.ok) return;
       const body = (await response.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 200);
@@ -184,7 +191,7 @@ export function createSlackApi(token: string, fetchImpl: typeof fetch = fetch): 
           signal: AbortSignal.timeout(TIMEOUT_MS),
         });
       } catch (error) {
-        throw new DeliveryError(`Slack ${method}: ${(error as Error).message}`);
+        throw new DeliveryError(`Slack ${method}: ${requestFailure(error)}`);
       }
       if (response.status === 429)
         throw new DeliveryError(`Slack ${method}: rate limited`, false, "ratelimited");

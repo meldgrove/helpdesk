@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { AppError } from "../http/errors";
 
 /** What a command reads and writes; tests pass their own. */
@@ -25,23 +26,43 @@ export class UsageError extends Error {
 /** The API's limit for JSON bodies. */
 const MAX_BODY_BYTES = 512 * 1024;
 
+/** Turns the terminal's echo off while a body is pasted, so its secret is not shown. */
+const echo = (on: boolean) =>
+  spawnSync("stty", [on ? "echo" : "-echo"], { stdio: ["inherit", "ignore", "ignore"] });
+
+function restoreEchoAndExit() {
+  echo(true);
+  process.exit(130);
+}
+
 export function processIo(): CliIo {
   return {
     async readStdin() {
-      if (process.stdin.isTTY)
-        process.stderr.write("Paste the JSON body, then press Ctrl-D on an empty line.\n");
-      const chunks: Buffer[] = [];
-      let size = 0;
-      for await (const chunk of process.stdin as AsyncIterable<Buffer>) {
-        size += chunk.length;
-        if (size > MAX_BODY_BYTES)
-          throw new AppError(413, "payload_too_large", "The body is larger than 512 KiB");
-        chunks.push(chunk);
+      const terminal = process.stdin.isTTY;
+      if (terminal) {
+        process.stderr.write("Paste the JSON body (it is not shown), then press Enter and Ctrl-D.\n");
+        echo(false);
+        process.once("SIGINT", restoreEchoAndExit);
       }
-      // An editor may start the file with a byte order mark.
-      return Buffer.concat(chunks)
-        .toString("utf8")
-        .replace(/^\uFEFF/, "");
+      try {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        for await (const chunk of process.stdin as AsyncIterable<Buffer>) {
+          size += chunk.length;
+          if (size > MAX_BODY_BYTES)
+            throw new AppError(413, "payload_too_large", "The body is larger than 512 KiB");
+          chunks.push(chunk);
+        }
+        // An editor may start the file with a byte order mark.
+        return Buffer.concat(chunks)
+          .toString("utf8")
+          .replace(/^\uFEFF/, "");
+      } finally {
+        if (terminal) {
+          process.off("SIGINT", restoreEchoAndExit);
+          echo(true);
+        }
+      }
     },
     out: (text) => void process.stdout.write(text),
     err: (text) => void process.stderr.write(text),

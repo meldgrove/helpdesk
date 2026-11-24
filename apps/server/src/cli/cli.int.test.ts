@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { eq } from "drizzle-orm";
+import { encryptSecret } from "../core/crypto";
+import { putSetting } from "../core/settings";
 import { getDb } from "../db/client";
 import { auditLog, settings } from "../db/schema";
 import { logger } from "../logger";
@@ -13,10 +17,11 @@ vi.mock("../auth/resolve", () => import("../test/resolve-mock"));
 
 const SMTP_PASSWORD = "smtp-password-7f3a";
 const MAILERSEND_TOKEN = "mlsn.cli-token-5c1e";
+const HEADER_TOKEN = "mlsn.header-token-7b9d";
 const SLACK_TOKEN = "xoxb-cli-token-9d2b";
 const IAM = "https://iam.example.org";
 const IAM_KEY = `iam_${"c".repeat(39)}8e4f`;
-const SECRETS = [SMTP_PASSWORD, MAILERSEND_TOKEN, SLACK_TOKEN, IAM_KEY];
+const SECRETS = [SMTP_PASSWORD, MAILERSEND_TOKEN, HEADER_TOKEN, SLACK_TOKEN, IAM_KEY];
 
 const MAPPING = {
   firstName: "first",
@@ -242,6 +247,19 @@ describe("cli settings … email", () => {
     });
   });
 
+  it("never prints a token that fetch refuses as a header value", async () => {
+    await cli(["settings", "apply", "email"], {
+      provider: "mailersend",
+      fromAddress: "helpdesk@example.org",
+      mailersend: { token: `${HEADER_TOKEN}\nline` },
+    });
+    // fetch quotes the refused header in its error; nothing is sent.
+    expect(await cli(["settings", "test", "email", "--to", "ada@example.org"])).toMatchObject({
+      code: 1,
+      stderr: "MailerSend: request failed\n",
+    });
+  });
+
   // Needs Mailpit (compose.dev.yaml, or the CI service): MAILPIT_SMTP_PORT and MAILPIT_API_URL.
   it.skipIf(!process.env.MAILPIT_API_URL)("sends the test email over SMTP", async () => {
     await cli(["settings", "apply", "email"], {
@@ -408,6 +426,8 @@ describe("cli usage", () => {
       ["settings", "apply", "slack", `--token=${SLACK_TOKEN}`],
       ["settings", "apply", "slack", `-${SLACK_TOKEN}`],
       ["settings", "list", "--json=yes"],
+      ["help", "settings"],
+      ["--help", `--token=${SLACK_TOKEN}`],
     ];
     for (const args of wrong) {
       const result = await cli(args);
@@ -453,29 +473,77 @@ describe("the admin page and the command", () => {
   });
 });
 
+/** Runs the command in a process of its own, as the image does. `readAfterMs`: a reader that starts late. */
+function runProcess(
+  args: string[],
+  options: { stdin?: string; env?: Record<string, string>; readAfterMs?: number } = {},
+) {
+  return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      ["--import", "tsx", path.join(SERVER_ROOT, "src/cli.ts"), ...args],
+      {
+        cwd: SERVER_ROOT,
+        env: { ...process.env, LOG_LEVEL: "debug", ...options.env },
+        timeout: 20_000,
+      },
+    );
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
+    if (options.readAfterMs) {
+      child.stdout.pause();
+      setTimeout(() => child.stdout.resume(), options.readAfterMs);
+    }
+    child.on("error", reject);
+    child.on("close", (code) => {
+      printed.push(stdout, stderr);
+      resolve({ code, stdout, stderr });
+    });
+    child.stdin.end(options.stdin ?? "");
+  });
+}
+
 describe("the cli process", () => {
   it("reads the body from stdin, keeps stdout for its output, logs to stderr and exits", async () => {
-    const run = (args: string[], stdin = "") =>
-      new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
-        const child = execFile(
-          process.execPath,
-          ["--import", "tsx", path.join(SERVER_ROOT, "src/cli.ts"), ...args],
-          { cwd: SERVER_ROOT, env: { ...process.env, LOG_LEVEL: "debug" }, timeout: 20_000 },
-          (_error, stdout, stderr) => resolve({ code: child.exitCode, stdout, stderr }),
-        );
-        child.stdin!.end(stdin);
-      });
-    const body = JSON.stringify({ botToken: null, channelId: null });
-    const applied = await run(["settings", "apply", "slack"], body);
-    printed.push(applied.stdout, applied.stderr);
+    const applied = await runProcess(["settings", "apply", "slack"], {
+      stdin: JSON.stringify({ botToken: null, channelId: null }),
+    });
     expect(applied.code).toBe(0);
     expect(JSON.parse(applied.stdout)).toMatchObject({ configured: false });
-    const listed = await run(["settings", "list", "--json"]);
-    printed.push(listed.stdout, listed.stderr);
+    const listed = await runProcess(["settings", "list", "--json"]);
     expect(listed.code).toBe(0);
     expect(JSON.parse(listed.stdout)).toHaveLength(3);
-    const refused = await run(["settings", "apply", "email"], "{}");
+    const refused = await runProcess(["settings", "apply", "email"], { stdin: "{}" });
     expect(refused).toMatchObject({ code: 1, stdout: "" });
     expect(refused.stderr).toContain("provider:");
+  });
+
+  it("writes all of a long output to a slow reader before it exits", async () => {
+    const channels = Array.from({ length: 2000 }, (_, index) => ({
+      id: `C${index}`,
+      name: `channel-${index}`,
+    }));
+    const slack = createServer((_request, response) => {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ ok: true, channels }));
+    }).listen(0, "127.0.0.1");
+    await new Promise((resolve) => slack.once("listening", resolve));
+    await putSetting(getDb(), "slack", {
+      botTokenEncrypted: encryptSecret(SLACK_TOKEN),
+      botTokenHint: "…9d2b",
+    });
+    try {
+      const shown = await runProcess(["settings", "show", "slack", "--channels"], {
+        env: { SLACK_API_URL: `http://127.0.0.1:${(slack.address() as AddressInfo).port}/api/` },
+        readAfterMs: 1000,
+      });
+      expect(shown.code).toBe(0);
+      expect(shown.stdout.length).toBeGreaterThan(200_000);
+      expect((JSON.parse(shown.stdout) as { items: unknown[] }).items).toHaveLength(2000);
+    } finally {
+      slack.close();
+    }
   });
 });
