@@ -1,6 +1,6 @@
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 import type { CheckResult } from "@helpdesk/shared/api/common";
-import type { Actor, OperatorPrincipal } from "../auth/principal";
+import { operator, type Actor } from "../auth/principal";
 import { UsageError, type CliIo } from "./io";
 
 export type SettingStatus = {
@@ -111,8 +111,7 @@ export async function settingsCommand(args: string[], io: CliIo, settings: Setti
       single(parse(optionArgs, id, usage));
       const body = await io.readStdin();
       if (!isJson(body)) throw new UsageError("The body on stdin is not JSON.", `${usage} < body.json`);
-      const actor: OperatorPrincipal = { kind: "operator", command: `cli settings apply ${setting.name}` };
-      io.out(json(await setting.apply(actor, body)));
+      io.out(json(await setting.apply(operator(`cli settings apply ${setting.name}`), body)));
       return 0;
     }
     case "remove":

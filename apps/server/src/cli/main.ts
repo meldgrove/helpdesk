@@ -1,3 +1,4 @@
+import pg from "pg";
 import { AppError } from "../http/errors";
 import { isFailedQuery } from "../logger";
 import { email } from "./email";
@@ -36,7 +37,10 @@ or a body that is not JSON. Example bodies: ${DOCS}
 `;
 }
 
-/** What went wrong, for stderr. Never the text of a failed query: its parameters hold the values. */
+/**
+ * What went wrong, for stderr. A database error gets the page's generic
+ * message: its text can quote values, and a failed query carries its parameters.
+ */
 function report(error: unknown, io: CliIo): number {
   if (error instanceof UsageError) {
     io.err(
@@ -49,9 +53,11 @@ function report(error: unknown, io: CliIo): number {
     for (const [field, message] of Object.entries(error.fields ?? {})) io.err(`  ${field}: ${message}\n`);
     return 1;
   }
-  if (isFailedQuery(error)) {
-    const code = (error.cause as { code?: unknown } | undefined)?.code;
-    io.err(`A database query failed${typeof code === "string" ? ` (${code})` : ""}.\n`);
+  if (isFailedQuery(error) || error instanceof pg.DatabaseError) {
+    const code = ((isFailedQuery(error) ? error.cause : error) as { code?: unknown } | undefined)?.code;
+    io.err(
+      `Something went wrong. Try again.${typeof code === "string" ? ` (database error ${code})` : ""}\n`,
+    );
     return 1;
   }
   io.err(`${error instanceof Error ? error.message : String(error)}\n`);

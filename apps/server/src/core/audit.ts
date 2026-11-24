@@ -1,6 +1,6 @@
 import type { DbOrTx } from "../db/client";
 import { auditLog } from "../db/schema";
-import type { Actor } from "../auth/principal";
+import { isOperator, type Actor } from "../auth/principal";
 
 /**
  * Records a change made in the admin interface or with the operator command.
@@ -12,8 +12,8 @@ export async function audit(
   actor: Actor | null,
   entry: { action: string; entityType: string; entityId?: string | null; summary: string },
 ) {
-  const user = actor?.kind === "user" ? actor : null;
-  const operator = actor?.kind === "operator" ? actor : null;
+  const operator = isOperator(actor) ? actor : null;
+  const user = actor && !isOperator(actor) ? actor : null;
   await db.insert(auditLog).values({
     actorUserId: user?.id ?? null,
     actorEmail: user?.email ?? (operator ? "operator" : null),
