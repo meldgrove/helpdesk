@@ -2,6 +2,7 @@ import nodemailer from "nodemailer";
 import { config } from "../config";
 import { decryptSecret } from "../core/crypto";
 import type { StoredEmail, StoredSlack } from "../core/settings";
+import { smtpReply } from "./smtp-reply";
 
 /*
  * Email over SMTP or the MailerSend API, and Slack over its Web API. Every
@@ -80,7 +81,7 @@ export function createMailerSendTransport(options: {
   };
 }
 
-type SmtpError = Error & { responseCode?: number; code?: string };
+type SmtpError = Error & { response?: string; responseCode?: number; code?: string; command?: string };
 
 export function createSmtpTransport(options: {
   host: string;
@@ -116,8 +117,12 @@ export function createSmtpTransport(options: {
       } catch (error) {
         const smtp = error as SmtpError;
         const detail = smtp.responseCode ? `SMTP ${smtp.responseCode}` : (smtp.code ?? "SMTP");
+        const reply = smtpReply(smtp, options);
         throw new DeliveryError(
-          `${detail}: ${smtp.message}`,
+          reply
+            ? `The mail server answered: ${reply}`
+            : // With an answer smtpReply does not quote, the message would.
+              `${detail}: ${smtp.response ? `unexpected answer (${smtp.command})` : smtp.message}`,
           (smtp.responseCode ?? 0) >= 500 || smtp.code === "EAUTH",
           smtp.code,
         );
