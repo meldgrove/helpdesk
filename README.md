@@ -59,3 +59,9 @@ Mailpit at http://localhost:8028 once a superadmin sets up SMTP
   updates.
 - [Architecture](docs/architecture.md): how it works inside.
 - [Contributing](CONTRIBUTING.md): development setup, checks, releases.
+
+## License
+
+Copyright 2026 Meldgrove
+
+Licensed under the [Apache License 2.0](LICENSE).
