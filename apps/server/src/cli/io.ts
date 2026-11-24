@@ -26,9 +26,9 @@ export class UsageError extends Error {
 /** The API's limit for JSON bodies. */
 const MAX_BODY_BYTES = 512 * 1024;
 
-/** Turns the terminal's echo off while a body is pasted, so its secret is not shown. */
+/** Turns the terminal's echo off while a body is pasted, so its secret is not shown. True when it worked. */
 const echo = (on: boolean) =>
-  spawnSync("stty", [on ? "echo" : "-echo"], { stdio: ["inherit", "ignore", "ignore"] });
+  spawnSync("stty", [on ? "echo" : "-echo"], { stdio: ["inherit", "ignore", "ignore"] }).status === 0;
 
 function restoreEchoAndExit() {
   echo(true);
@@ -40,9 +40,15 @@ export function processIo(): CliIo {
     async readStdin() {
       const terminal = process.stdin.isTTY;
       if (terminal) {
-        process.stderr.write("Paste the JSON body (it is not shown), then press Enter and Ctrl-D.\n");
-        echo(false);
+        // Echo goes off before the prompt: nothing pasted after the prompt is shown.
+        if (!echo(false)) {
+          throw new UsageError(
+            "The terminal's echo cannot be turned off: pipe the body in instead.",
+            "cli settings apply <name> < body.json",
+          );
+        }
         process.once("SIGINT", restoreEchoAndExit);
+        process.stderr.write("Paste the JSON body (it is not shown), then press Enter and Ctrl-D.\n");
       }
       try {
         const chunks: Buffer[] = [];
