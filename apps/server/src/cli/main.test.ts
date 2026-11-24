@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DrizzleQueryError } from "drizzle-orm";
 import pg from "pg";
+import { ConfigError } from "../config";
 import { email } from "./email";
 import { runCli } from "./main";
 
@@ -35,5 +36,27 @@ describe("a database error", () => {
 
     vi.spyOn(email, "status").mockRejectedValue(cause);
     expect((await list()).stderr).toBe("Something went wrong. Try again. (database error 22001)\n");
+  });
+});
+
+describe("an unexpected error", () => {
+  it("prints the page's generic message with its code, never its text", async () => {
+    vi.spyOn(email, "status").mockRejectedValue(
+      Object.assign(new Error("connect ECONNREFUSED 10.0.0.5:5432"), { code: "ECONNREFUSED" }),
+    );
+    expect(await list()).toEqual({
+      code: 1,
+      stdout: "",
+      stderr: "Something went wrong. Try again. (ECONNREFUSED)\n",
+    });
+    vi.spyOn(email, "status").mockRejectedValue(new TypeError(`Invalid header value "Bearer ${SECRET}"`));
+    expect((await list()).stderr).toBe("Something went wrong. Try again.\n");
+  });
+
+  it("names the variables of an invalid configuration", async () => {
+    vi.spyOn(email, "status").mockRejectedValue(
+      new ConfigError("Invalid configuration:\n  DATABASE_URL: Required"),
+    );
+    expect((await list()).stderr).toBe("Invalid configuration:\n  DATABASE_URL: Required\n");
   });
 });
