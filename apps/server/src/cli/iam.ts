@@ -16,7 +16,7 @@ export const iam: Setting = {
     if (stored.url) hints.push(stored.url);
     if (stored.apiKeyHint) hints.push(`API key ${stored.apiKeyHint}`);
     const mapped = Object.values(stored.mapping).filter(Boolean).length;
-    if (mapped) hints.push(`${mapped} fields from the form`);
+    if (mapped) hints.push(`${mapped} ${mapped === 1 ? "field" : "fields"} from the form`);
     if (iamConfigured(stored)) return { state: "set", hints };
     return { state: stored.url || stored.apiKeyEncrypted ? "incomplete" : "not set", hints };
   },
