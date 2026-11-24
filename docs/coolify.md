@@ -43,8 +43,8 @@ In the resource, open **Terminal**, choose the `web` container and run
 `cli settings list`. `cli settings apply <name>` saves a JSON body from
 stdin, as the Integrations page does: paste the body (the terminal does not
 show it), then press Enter and Ctrl-D. Paste it over several lines, as in
-the examples: the terminal keeps at most 4,095 characters of one line. The commands, the setting names and
-an example body for each are in
+the examples: the terminal keeps at most 4,095 bytes of one line. The
+commands, the setting names and an example body for each are in
 [Deployment](deployment.md#settings-from-the-command-line).
 
 ## Upgrades
