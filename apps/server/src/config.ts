@@ -113,6 +113,11 @@ const schema = z
       (value) => (typeof value === "string" ? value.trim().replace(/\/+$/, "") : DEFAULT_UPDATER_URL),
       z.union([z.literal(""), z.url({ protocol: /^https?$/ })]),
     ),
+    /**
+     * The updater's API_TOKEN, sent with every request to UPDATER_URL. Unset
+     * or empty: none (the updater then takes requests without a token).
+     */
+    UPDATER_TOKEN: optional(z.string().trim()),
     /** Error reports and performance data to Sentry or a compatible service; off when unset. */
     SENTRY_DSN: optional(z.url()),
     SENTRY_ENVIRONMENT: optional(z.string().max(64)),

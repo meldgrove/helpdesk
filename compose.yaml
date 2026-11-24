@@ -37,8 +37,10 @@ x-app-environment: &app-environment
   # The reverse proxy in front of the app sets X-Forwarded-For.
   TRUST_PROXY: ${TRUST_PROXY:-true}
   # The update button of superadmins asks the `updater` service; an empty
-  # UPDATER_URL gets this default too.
+  # UPDATER_URL gets this default too. With UPDATER_TOKEN (openssl rand -hex
+  # 32), the app sends it, and the updater takes only requests that carry it.
   UPDATER_URL: ${UPDATER_URL:-http://updater:8080}
+  UPDATER_TOKEN: ${UPDATER_TOKEN:-}
 
 x-app: &app
   image: *image
@@ -110,6 +112,8 @@ services:
       IMAGE: *image
       # The server writes the installed version into this variable in .env.
       VERSION_VARIABLE: HELPDESK_VERSION
+      # The app's UPDATER_TOKEN; empty: the API takes requests without one.
+      API_TOKEN: ${UPDATER_TOKEN:-}
       # A stable release installs once it has been out this long, and only
       # inside the window, if one is set (e.g. 02:00-05:00, in the time zone TZ).
       COOLDOWN: ${UPDATE_COOLDOWN:-3d}

@@ -29,3 +29,27 @@ describe("UPDATER_URL", () => {
     expect(withUpdaterUrl("file:///etc/passwd")).toThrow(/UPDATER_URL/);
   });
 });
+
+describe("UPDATER_TOKEN", () => {
+  afterEach(() => {
+    delete process.env.UPDATER_TOKEN;
+    resetConfigForTests();
+  });
+
+  const withToken = (value: string | undefined) => {
+    if (value === undefined) delete process.env.UPDATER_TOKEN;
+    else process.env.UPDATER_TOKEN = value;
+    resetConfigForTests();
+    return config().UPDATER_TOKEN;
+  };
+
+  it("is none when unset or empty", () => {
+    expect(withToken(undefined)).toBeUndefined();
+    expect(withToken("")).toBeUndefined();
+    expect(withToken("  ")).toBeUndefined();
+  });
+
+  it("drops surrounding spaces", () => {
+    expect(withToken(" 0123abcd \n")).toBe("0123abcd");
+  });
+});

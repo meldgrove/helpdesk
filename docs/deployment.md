@@ -76,7 +76,8 @@ run the commands as root (`sudo -i`).
 4. **Create `.env`** from `.env.example` (`cp .env.example .env`,
    `chmod 600 .env`) and set production values: `HELPDESK_VERSION` (the
    newest release, such as `0.1.0`), `APP_URL`, `DATABASE_URL`, new secrets
-   (`openssl rand -base64 32` for `AUTH_SECRET` and `ENCRYPTION_KEY`), the
+   (`openssl rand -base64 32` for `AUTH_SECRET` and `ENCRYPTION_KEY`;
+   `openssl rand -hex 32` for `UPDATER_TOKEN`), the
    `OIDC_*` values, `DIRECTORY` and the groups
    ([Identity and access](identity-and-access.md)), and your address in
    `SUPERADMIN_EMAILS`. Remove `NODE_ENV=development` and `RUN_MIGRATIONS`.
@@ -258,7 +259,29 @@ still shows new releases, but nothing installs from the app.
 **Administration → Updates** shows the installed version and sets the
 channel. The app reaches the updater at `UPDATER_URL`
 (default `http://updater:8080`); without it, the icon says "No update
-service". The updater's API has no authentication: never publish its port.
+service". With `UPDATER_TOKEN` set, the app sends it with each request, and
+the updater's API takes only requests that carry it (`compose.yaml` passes
+it to both). Without it, anything on the app's Docker network can use the
+API, and **Administration → Updates** warns about that (updater 0.2.4 and
+later). Never publish the updater's port.
+
+### Protect the update service
+
+Recommended for servers set up before `UPDATER_TOKEN` existed; without it,
+everything works as before. In `/srv/helpdesk`:
+
+1. Run the release that brings `UPDATER_TOKEN`, or a newer one (its release
+   notes name this step): install it at the update button, or set
+   `HELPDESK_VERSION` in `.env` to it. An older helpdesk cannot send the
+   token, and its update button would stop working.
+2. Add the line `UPDATER_TOKEN=<token>` to `.env`, with a new token from
+   `openssl rand -hex 32`.
+3. Get the newest `compose.yaml`, which passes it to the app and the
+   updater: `git pull`.
+4. Start again: `docker compose up -d --pull always`.
+
+**Administration → Updates** warns until the updater takes only requests
+with the token (updater 0.2.4 and later tell the app).
 
 ### Setup on the server
 

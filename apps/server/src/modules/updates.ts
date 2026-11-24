@@ -1,88 +1,68 @@
 import { Hono, type Context } from "hono";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
-import {
-  updateChannelInputSchema,
-  updateInstallInputSchema,
-  type UpdatesResponse,
-} from "@helpdesk/shared/api/updates";
+import { createUpdatesHandler } from "@meldgrove/ui/updates/server";
+import type { UpdateChannel, UpdatesResponse } from "@meldgrove/ui/updates/core";
 import { config } from "../config";
 import { getDb } from "../db/client";
 import { audit } from "../core/audit";
 import type { AppEnv } from "../http/env";
-import { jsonBody, requireSuperadmin } from "../http/middleware";
+import { requireSuperadmin } from "../http/middleware";
 import { logger } from "../logger";
-import { createUpdaterClient, type UpdaterClient, type UpdaterResult } from "../updates/client";
 
 /**
  * In-app updates for superadmins: the Meldgrove Updater's status, a check,
  * an installation and the channel
- * (https://github.com/meldgrove/updater#the-apps-update-button). Every route
- * answers with `UpdatesResponse`: an updater error answer becomes 409 with
- * `error` and the latest status (the install route passes a 5xx through: the
- * installation may have started); no answer from UPDATER_URL (or an empty
- * UPDATER_URL) is 200 with `reachable: false`.
+ * (https://github.com/meldgrove/updater#the-apps-update-button). The routes
+ * check the role (the API's same-origin check covers the POSTs) and record
+ * changes in the audit log; `@meldgrove/ui/updates/server` checks the body,
+ * asks the updater with UPDATER_TOKEN, and answers with `UpdatesResponse`.
  */
+/**
+ * The shared handler's answer through Hono's context, so the headers that
+ * middleware set before the route (x-request-id) stay on it.
+ */
+async function answer(c: Context<AppEnv>, response: Response | Promise<Response>) {
+  const result = await response;
+  return c.newResponse(result.body, result);
+}
+
 const router = new Hono<AppEnv>();
 
-const OFF = "No update service is set up (UPDATER_URL is empty).";
+const updates = createUpdatesHandler(() => ({
+  url: config().UPDATER_URL,
+  token: config().UPDATER_TOKEN,
+  appVersion: config().APP_VERSION ?? null,
+  logger,
+}));
 
-function updaterClient(): UpdaterClient | null {
-  const url = config().UPDATER_URL;
-  return url ? createUpdaterClient(url) : null;
+/**
+ * The value the updater took: the request's `version` or `channel`, when
+ * the answer is a success with the updater's status and no error. The
+ * handler accepted it, so it matches the contract's pattern.
+ */
+async function accepted(request: Request, response: Response, field: "version" | "channel") {
+  if (!response.ok) return null;
+  const answer = (await response.clone().json()) as UpdatesResponse;
+  if (!answer.reachable || answer.error !== null) return null;
+  const value = ((await request.json()) as Record<string, unknown>)[field];
+  return typeof value === "string" ? value : null;
 }
 
-async function respond(
-  c: Context<AppEnv>,
-  client: UpdaterClient | null,
-  result: UpdaterResult | null,
-  options: { success?: 200 | 202; passServerErrors?: boolean } = {},
-) {
-  const app = { version: config().APP_VERSION ?? null };
-  let body: UpdatesResponse;
-  let status: ContentfulStatusCode = 200;
-  if (!client || !result) {
-    body = { app, reachable: false, updater: null, error: OFF };
-  } else if (result.kind === "ok") {
-    body = { app, reachable: true, updater: result.status, error: null };
-    status = options.success ?? 200;
-  } else if (result.kind === "unreachable") {
-    logger.warn({ route: c.req.routePath, problem: "unreachable" }, "update service not reachable");
-    body = { app, reachable: false, updater: null, error: result.error };
-  } else {
-    logger.warn({ route: c.req.routePath, status: result.httpStatus }, "update service refused");
-    const latest = c.req.method === "GET" ? null : await client.status();
-    body = {
-      app,
-      reachable: true,
-      updater: latest?.kind === "ok" ? latest.status : null,
-      error: result.error,
-    };
-    status =
-      options.passServerErrors && result.httpStatus >= 500 && result.httpStatus <= 599
-        ? (result.httpStatus as ContentfulStatusCode)
-        : 409;
-  }
-  return c.json(body, status);
-}
-
-router.get("/updates", async (c) => {
+router.get("/updates", (c) => {
   requireSuperadmin(c);
-  const client = updaterClient();
-  return respond(c, client, client ? await client.status() : null);
+  return answer(c, updates.respond("status"));
 });
 
-router.post("/updates/check", async (c) => {
+router.post("/updates/check", (c) => {
   requireSuperadmin(c);
-  const client = updaterClient();
-  return respond(c, client, client ? await client.check() : null);
+  return answer(c, updates.respond("check"));
 });
 
 router.post("/updates/install", async (c) => {
   const actor = requireSuperadmin(c);
-  const { version } = await jsonBody(c, updateInstallInputSchema);
-  const client = updaterClient();
-  const result = client ? await client.install(version) : null;
-  if (result?.kind === "ok") {
+  const request = c.req.raw.clone();
+  const response = await updates.respond("install", c.req.raw);
+  const version = await accepted(request, response, "version");
+  if (version) {
     await audit(getDb(), actor, {
       action: "update.install",
       entityType: "update",
@@ -90,15 +70,15 @@ router.post("/updates/install", async (c) => {
       summary: `Started the update to ${version}`,
     });
   }
-  return respond(c, client, result, { success: 202, passServerErrors: true });
+  return answer(c, response);
 });
 
 router.post("/updates/channel", async (c) => {
   const actor = requireSuperadmin(c);
-  const { channel } = await jsonBody(c, updateChannelInputSchema);
-  const client = updaterClient();
-  const result = client ? await client.channel(channel) : null;
-  if (result?.kind === "ok") {
+  const request = c.req.raw.clone();
+  const response = await updates.respond("channel", c.req.raw);
+  const channel = (await accepted(request, response, "channel")) as UpdateChannel | null;
+  if (channel) {
     await audit(getDb(), actor, {
       action: "update.channel",
       entityType: "update",
@@ -106,7 +86,7 @@ router.post("/updates/channel", async (c) => {
       summary: channel === "preview" ? "Switched updates to Preview" : "Switched updates to Stable",
     });
   }
-  return respond(c, client, result);
+  return answer(c, response);
 });
 
 export default router;

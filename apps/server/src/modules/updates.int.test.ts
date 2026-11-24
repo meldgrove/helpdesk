@@ -1,15 +1,21 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { desc } from "drizzle-orm";
+import { startFakeUpdater, updaterStatus, type FakeUpdater } from "@meldgrove/ui/updates/testing";
 import { resetConfigForTests } from "../config";
 import { getDb } from "../db/client";
 import { auditLog } from "../db/schema";
 import { createUser, request, resetDatabase } from "../test/helpers";
-import { startFakeUpdater, updaterStatus } from "../test/fake-updater";
 
 vi.mock("../auth/resolve", () => import("../test/resolve-mock"));
 
+// The handler of @meldgrove/ui answers for the updater (its own tests cover
+// timeouts, refusals and the status); these tests cover what Helpdesk adds:
+// the role, the same-origin check, UPDATER_TOKEN and the audit log.
+
+const TOKEN = "updater-test-token";
+
 type User = Awaited<ReturnType<typeof createUser>>;
-let updater: Awaited<ReturnType<typeof startFakeUpdater>>;
+let updater: FakeUpdater;
 let superadmin: User;
 
 function setEnv(values: Record<string, string | undefined>) {
@@ -20,35 +26,28 @@ function setEnv(values: Record<string, string | undefined>) {
   resetConfigForTests();
 }
 
-beforeAll(async () => {
-  updater = await startFakeUpdater();
-});
-
-afterAll(async () => {
-  await updater.close();
-  setEnv({ UPDATER_URL: undefined, APP_VERSION: undefined });
-});
+const lastAudit = async () =>
+  (await getDb().select().from(auditLog).orderBy(desc(auditLog.createdAt)).limit(1))[0];
 
 beforeEach(async () => {
   await resetDatabase();
   superadmin = await createUser("superadmin", { email: "ada@example.org" });
-  updater.received.length = 0;
-  updater.reply(() => ({ body: updaterStatus() }));
-  setEnv({ UPDATER_URL: updater.url, APP_VERSION: "0.2.0" });
+  updater = await startFakeUpdater({ token: TOKEN });
+  setEnv({ UPDATER_URL: updater.url, UPDATER_TOKEN: TOKEN, APP_VERSION: "0.2.0" });
 });
 
-afterEach(() => {
-  setEnv({ UPDATER_URL: undefined, APP_VERSION: undefined });
+afterEach(async () => {
+  await updater.close();
+  setEnv({ UPDATER_URL: undefined, UPDATER_TOKEN: undefined, APP_VERSION: undefined });
 });
 
 describe("updates", () => {
-  it("are for superadmins only", async () => {
+  it("are for superadmins only, without a call to the updater", async () => {
     for (const role of ["requester", "operator", "admin"] as const) {
       const user = await createUser(role);
       expect((await request("GET", "/api/v1/updates", { userId: user.id })).status).toBe(403);
-      expect((await request("POST", "/api/v1/updates/check", { userId: user.id, body: {} })).status).toBe(
-        403,
-      );
+      const check = await request("POST", "/api/v1/updates/check", { userId: user.id, body: {} });
+      expect(check.status).toBe(403);
       const install = await request("POST", "/api/v1/updates/install", {
         userId: user.id,
         body: { version: "0.2.1" },
@@ -61,34 +60,46 @@ describe("updates", () => {
       expect(channel.status).toBe(403);
     }
     expect((await request("GET", "/api/v1/updates")).status).toBe(401);
-    expect(updater.received).toEqual([]);
+    expect(updater.calls).toEqual([]);
   });
 
-  it("show the updater's status and the app's version", async () => {
+  it("show the updater's status and the app's version, asked with UPDATER_TOKEN", async () => {
     const response = await request("GET", "/api/v1/updates", { userId: superadmin.id });
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("x-request-id")).toBeTruthy();
     expect(response.body).toEqual({
       app: { version: "0.2.0" },
       reachable: true,
-      updater: updaterStatus(),
+      updater: updaterStatus({ apiToken: true }),
       error: null,
     });
-    expect(updater.received).toEqual([{ method: "GET", path: "/v1/status", body: undefined }]);
+    expect(updater.calls).toEqual([
+      { method: "GET", path: "/v1/status", body: null, authorization: `Bearer ${TOKEN}` },
+    ]);
   });
 
-  it("have no app version in development", async () => {
-    setEnv({ APP_VERSION: undefined });
-    const response = await request("GET", "/api/v1/updates", { userId: superadmin.id });
-    expect(response.body.app).toEqual({ version: null });
-  });
+  it("send no token while UPDATER_TOKEN is empty", async () => {
+    await updater.close();
+    updater = await startFakeUpdater();
+    setEnv({ UPDATER_URL: updater.url, UPDATER_TOKEN: "" });
 
-  it("check on request", async () => {
     const response = await request("POST", "/api/v1/updates/check", { userId: superadmin.id, body: {} });
 
     expect(response.status).toBe(200);
-    expect(response.body.updater).toEqual(updaterStatus());
-    expect(updater.received.map((call) => `${call.method} ${call.path}`)).toEqual(["POST /v1/check"]);
+    expect(response.body.updater).toEqual(updaterStatus({ apiToken: false }));
+    expect(updater.calls).toEqual([{ method: "POST", path: "/v1/check", body: null, authorization: null }]);
+  });
+
+  it("name UPDATER_TOKEN when the updater refuses the token", async () => {
+    setEnv({ UPDATER_TOKEN: "another-token" });
+
+    const response = await request("GET", "/api/v1/updates", { userId: superadmin.id });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toMatch(/UPDATER_TOKEN/);
+    expect(updater.calls.map((call) => call.authorization)).toEqual(["Bearer another-token"]);
   });
 
   it("install a version and record it in the audit log", async () => {
@@ -100,7 +111,7 @@ describe("updates", () => {
         stage: "requested",
       },
     });
-    updater.reply(() => ({ status: 202, body: installing }));
+    updater.respond(() => ({ status: 202, body: installing }));
 
     const response = await request("POST", "/api/v1/updates/install", {
       userId: superadmin.id,
@@ -114,9 +125,10 @@ describe("updates", () => {
       updater: installing,
       error: null,
     });
-    expect(updater.received).toEqual([{ method: "POST", path: "/v1/install", body: { version: "0.2.1" } }]);
-    const [entry] = await getDb().select().from(auditLog).orderBy(desc(auditLog.createdAt)).limit(1);
-    expect(entry).toMatchObject({
+    expect(updater.calls).toEqual([
+      { method: "POST", path: "/v1/install", body: { version: "0.2.1" }, authorization: `Bearer ${TOKEN}` },
+    ]);
+    expect(await lastAudit()).toMatchObject({
       action: "update.install",
       entityId: "0.2.1",
       actorEmail: "ada@example.org",
@@ -124,54 +136,9 @@ describe("updates", () => {
     });
   });
 
-  it("accept previews and images without a version", async () => {
-    for (const version of ["0.2.1-preview.3", "sha256:0123456789ab"]) {
-      const response = await request("POST", "/api/v1/updates/install", {
-        userId: superadmin.id,
-        body: { version },
-      });
-      expect(response.status).toBe(202);
-    }
-  });
-
-  it("validate the version and the channel before calling the updater", async () => {
-    for (const version of ["latest", "0.2", "v0.2.1", "0.2.1-rc.1", "0.2.1; rm -rf /", "sha256:0123", 7]) {
-      const response = await request("POST", "/api/v1/updates/install", {
-        userId: superadmin.id,
-        body: { version },
-      });
-      expect(response.status).toBe(422);
-      expect(response.body.error.fields).toHaveProperty("version");
-    }
-    for (const channel of ["beta", "", null]) {
-      const response = await request("POST", "/api/v1/updates/channel", {
-        userId: superadmin.id,
-        body: { channel },
-      });
-      expect(response.status).toBe(422);
-    }
-    expect(updater.received).toEqual([]);
-  });
-
-  it("switch the channel", async () => {
-    const preview = updaterStatus({ channel: "preview", cooldown: null });
-    updater.reply(() => ({ body: preview }));
-
-    const response = await request("POST", "/api/v1/updates/channel", {
-      userId: superadmin.id,
-      body: { channel: "preview" },
-    });
-
-    expect(response.status).toBe(200);
-    expect(response.body.updater).toEqual(preview);
-    expect(updater.received).toEqual([{ method: "POST", path: "/v1/channel", body: { channel: "preview" } }]);
-    const [entry] = await getDb().select().from(auditLog).orderBy(desc(auditLog.createdAt)).limit(1);
-    expect(entry).toMatchObject({ action: "update.channel", summary: "Switched updates to Preview" });
-  });
-
-  it("answer 409 with the updater's error and the latest status", async () => {
-    updater.reply((method, path) =>
-      path === "/v1/install"
+  it("record nothing when the updater refuses", async () => {
+    updater.respond((call) =>
+      call.path === "/v1/install"
         ? { status: 409, body: { error: "0.2.1 is being installed." } }
         : { body: updaterStatus() },
     );
@@ -182,84 +149,40 @@ describe("updates", () => {
     });
 
     expect(response.status).toBe(409);
-    expect(response.body).toEqual({
-      app: { version: "0.2.0" },
-      reachable: true,
-      updater: updaterStatus(),
-      error: "0.2.1 is being installed.",
-    });
-    expect(updater.received.map((call) => `${call.method} ${call.path}`)).toEqual([
-      "POST /v1/install",
-      "GET /v1/status",
-    ]);
+    expect(response.body).toMatchObject({ reachable: true, error: "0.2.1 is being installed." });
     expect(await getDb().select().from(auditLog)).toEqual([]);
   });
 
-  it("pass an updater's 5xx to an installation through: it may have started", async () => {
-    updater.reply((method) =>
-      method === "POST"
-        ? { status: 503, body: { error: "The deploy link did not answer." } }
-        : { body: updaterStatus() },
-    );
-
-    const response = await request("POST", "/api/v1/updates/install", {
-      userId: superadmin.id,
-      body: { version: "0.2.1" },
-    });
-
-    expect(response.status).toBe(503);
-    expect(response.body).toEqual({
-      app: { version: "0.2.0" },
-      reachable: true,
-      updater: updaterStatus(),
-      error: "The deploy link did not answer.",
-    });
+  it("refuse a wrong version before calling the updater", async () => {
+    for (const version of ["latest", "0.2.1; rm -rf /", 7]) {
+      const response = await request("POST", "/api/v1/updates/install", {
+        userId: superadmin.id,
+        body: { version },
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(updater.calls).toEqual([]);
     expect(await getDb().select().from(auditLog)).toEqual([]);
-    // Other routes keep 409 for an updater's error answer.
-    const check = await request("POST", "/api/v1/updates/check", { userId: superadmin.id, body: {} });
-    expect(check.status).toBe(409);
   });
 
-  it("pass on a locked channel as 409", async () => {
-    const locked = "The platform's image tag latest decides which updates install. Change it there.";
-    updater.reply((method, path) =>
-      path === "/v1/channel" ? { status: 409, body: { error: locked } } : { body: updaterStatus() },
-    );
+  it("switch the channel and record it", async () => {
+    const preview = updaterStatus({ channel: "preview", cooldown: null });
+    updater.respond(() => ({ body: preview }));
 
     const response = await request("POST", "/api/v1/updates/channel", {
       userId: superadmin.id,
       body: { channel: "preview" },
     });
 
-    expect(response.status).toBe(409);
-    expect(response.body.error).toBe(locked);
-  });
-
-  it("are unreachable without an updater", async () => {
-    const closed = await startFakeUpdater();
-    await closed.close();
-    setEnv({ UPDATER_URL: closed.url });
-
-    const response = await request("GET", "/api/v1/updates", { userId: superadmin.id });
-
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({
-      app: { version: "0.2.0" },
-      reachable: false,
-      updater: null,
-      error: `No connection to the update service at ${closed.url}.`,
-    });
-  });
-
-  it("are unreachable when the updater does not answer in time", async () => {
-    updater.reply(() => ({ delayMs: 4_000, body: updaterStatus() }));
-
-    const response = await request("GET", "/api/v1/updates", { userId: superadmin.id });
-
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({
-      reachable: false,
-      error: `The update service at ${updater.url} did not answer within 3 seconds.`,
+    expect(response.body.updater).toEqual(preview);
+    expect(updater.calls).toEqual([
+      { method: "POST", path: "/v1/channel", body: { channel: "preview" }, authorization: `Bearer ${TOKEN}` },
+    ]);
+    expect(await lastAudit()).toMatchObject({
+      action: "update.channel",
+      entityId: "preview",
+      summary: "Switched updates to Preview",
     });
   });
 
@@ -270,7 +193,7 @@ describe("updates", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ reachable: false, updater: null });
-    expect(updater.received).toEqual([]);
+    expect(updater.calls).toEqual([]);
   });
 
   it("reject cross-site requests", async () => {
@@ -285,6 +208,6 @@ describe("updates", () => {
       body: JSON.stringify({ version: "0.2.1" }),
     });
     expect(response.status).toBe(403);
-    expect(updater.received).toEqual([]);
+    expect(updater.calls).toEqual([]);
   });
 });
