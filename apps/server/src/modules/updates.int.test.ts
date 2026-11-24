@@ -68,6 +68,7 @@ describe("updates", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("x-request-id")).toBeTruthy();
     expect(response.body).toEqual({
       app: { version: "0.2.0" },
       reachable: true,
