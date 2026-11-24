@@ -67,7 +67,7 @@ describe("updates", () => {
     const response = await request("GET", "/api/v1/updates", { userId: superadmin.id });
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(response.body).toEqual({
       app: { version: "0.2.0" },
       reachable: true,

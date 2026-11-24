@@ -4,6 +4,8 @@
 // installed in the image), @sentry/node too: its tracing hooks into packages
 // such as pg as they load, which does not work from inside a bundle. The
 // workspace package (@helpdesk/shared) is bundled.
+// So is @meldgrove/ui/updates/server (a root devDependency, kept out of the
+// image's node_modules, where its React peers would come along).
 import { build } from "esbuild";
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";

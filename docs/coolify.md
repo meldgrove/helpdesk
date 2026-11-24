@@ -87,8 +87,11 @@ Recommended for resources set up before `UPDATER_TOKEN` existed; without
 it, everything works as before. In the resource's environment variables,
 add `UPDATER_TOKEN` with a new value (`openssl rand -hex 32`), then
 redeploy: Coolify reads the newest `compose.coolify.yaml` from `stable`,
-which passes the token to the app and the updater. **Administration →
-Updates** warns until the updater takes only requests with the token.
+which passes the token to the app and the updater. With an exact version in
+`HELPDESK_VERSION`, set it to the release that brings `UPDATER_TOKEN` or a
+newer one first: an older helpdesk cannot send the token. **Administration →
+Updates** warns until the updater takes only requests with the token
+(updater 0.2.4 and later).
 
 ## Moving an existing resource
 
