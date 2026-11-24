@@ -154,6 +154,8 @@ the reason, and the version before keeps running.
 install, and sets the channel: **Stable** (releases) or **Preview** (every
 change before it is released; new features first, and now and then a new
 bug). Switching back to Stable keeps the preview until a release is newer.
+When the update service takes requests without a token, the page warns:
+[Protect the update service](deployment.md#protect-the-update-service).
 Setting up the update service: [Deployment](deployment.md#automatic-updates).
 
 ## Audit log

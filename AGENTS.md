@@ -39,10 +39,9 @@ apps/server/src/
   notifications/   outbox (enqueue.ts), templates, transports, delivery
   attachments/     file storage on disk
   worker/          delivery loop and scheduled jobs
-  updates/         client for the Meldgrove Updater's API (in-app updates)
   integrations/    email and Slack settings: shared by the routes and cli settings
   http/            app factory, middleware (requireUser/requireStaff/requireAdmin/requireSuperadmin), errors
-  modules/         one file per API area: routes
+  modules/         one file per API area: routes (updates.ts: in-app updates through @meldgrove/ui/updates/server)
 apps/web/src/      web app; modules/<area> holds each area's pages
 packages/shared/src/  contracts, roles, tickets, form
 ```

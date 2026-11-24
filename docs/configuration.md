@@ -52,10 +52,17 @@ See [Identity and access](identity-and-access.md).
 | `LOG_LEVEL`             | `info`                               | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`.                                   |
 | `WORKER_HEARTBEAT_FILE` | `/tmp/worker-heartbeat` in the image | The worker touches it for health checks.                                                          |
 | `UPDATER_URL`           | `http://updater:8080`                | The updater, for the update button ([Deployment](deployment.md#automatic-updates)).               |
+| `UPDATER_TOKEN`         |                                      | Recommended: the token the updater's API requires (`openssl rand -hex 32`).                       |
 
 An empty `UPDATER_URL` turns the update button off only where the app reads
 its environment directly, as in development: `compose.yaml` uses the default
 for an empty value too.
+
+The app sends `UPDATER_TOKEN` to the updater with each request;
+`compose.yaml` and `compose.coolify.yaml` also pass it to the `updater`
+service, whose API then takes only requests that carry it. Unset or empty:
+no token, and the API takes requests from anything on the app's Docker
+network ([Protect the update service](deployment.md#protect-the-update-service)).
 
 ## Sentry
 

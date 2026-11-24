@@ -146,10 +146,12 @@ again on every request.
 ## Updates
 
 The `updater` service of `compose.yaml` (the Meldgrove Updater) finds and
-installs new versions. `modules/updates.ts` passes the superadmins' requests
-to its API at `UPDATER_URL` (`updates/client.ts`, with timeouts) and answers
-with its status. The update button and the Updates page come from the
-shared package `@meldgrove/ui`: `modules/updates/updates.tsx` gives
+installs new versions. `modules/updates.ts` checks the superadmin role,
+records installations and channel changes in the audit log, and leaves the
+rest to `createUpdatesHandler` of `@meldgrove/ui/updates/server`: it checks
+the body, asks the updater's API at `UPDATER_URL` with `UPDATER_TOKEN` (with
+timeouts), and answers with its status. The update button and the Updates
+page come from the same package: `modules/updates/updates.tsx` gives
 superadmins its `UpdatesProvider`, which the header button and
 `/admin/updates` share. It derives what to show from that status and follows
 an installation through the restart.

@@ -26,8 +26,9 @@ backups, Sentry, logs and hardening are the same as on a server: see
 5. **Environment variables** of the resource: `HELPDESK_VERSION` (a series
    such as `0.1`, see [Automatic updates](#automatic-updates)), `APP_URL`
    (the domain), `DATABASE_URL` (the database's internal URL), new secrets
-   (`openssl rand -base64 32` for `AUTH_SECRET` and `ENCRYPTION_KEY`), the
-   `OIDC_*` values, `DIRECTORY` and the groups
+   (`openssl rand -base64 32` for `AUTH_SECRET` and `ENCRYPTION_KEY`;
+   `openssl rand -hex 32` for `UPDATER_TOKEN`, which protects the update
+   service), the `OIDC_*` values, `DIRECTORY` and the groups
    ([Identity and access](identity-and-access.md)), and your address in
    `SUPERADMIN_EMAILS`.
 6. **Deploy**, open `APP_URL` and sign in.
@@ -79,6 +80,15 @@ backups first: migrations run without anyone watching.
    the webhook and `UPDATE_DEPLOY_HOOK_TOKEN` to the token, then redeploy.
 
 The `updater` log then names the tag it watches.
+
+### Protect the update service
+
+Recommended for resources set up before `UPDATER_TOKEN` existed; without
+it, everything works as before. In the resource's environment variables,
+add `UPDATER_TOKEN` with a new value (`openssl rand -hex 32`), then
+redeploy: Coolify reads the newest `compose.coolify.yaml` from `stable`,
+which passes the token to the app and the updater. **Administration →
+Updates** warns until the updater takes only requests with the token.
 
 ## Moving an existing resource
 
