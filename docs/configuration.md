@@ -1,8 +1,10 @@
 # Configuration
 
-Every environment variable. Blank values count as unset. Email, Slack, the
-form and the categories are set up in the app, not here
-([Admin guide](admin-guide.md)).
+Every environment variable. Blank values count as unset. Email, Slack,
+Meldgrove IAM, the form and the categories are set up in the app, not here
+([Admin guide](admin-guide.md)); email, Slack and IAM also with
+`cli settings` on the server
+([Deployment](deployment.md#settings-from-the-command-line)).
 
 ## Required
 

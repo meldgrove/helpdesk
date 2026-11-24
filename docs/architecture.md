@@ -22,6 +22,15 @@ One Docker image, one Node.js entry point (`apps/server/src/main.ts`);
 `node --import dist/instrument.mjs` starts Sentry before the app loads, so
 HTTP, Hono, database and outgoing calls can be traced.
 
+The image's command `cli` runs the operator command (`src/cli.ts`, bundled
+as `dist/cli.mjs`; `/usr/local/bin/cli` in the image): `cli settings`
+lists, shows, applies and tests the settings of the Integrations page. The
+routes and the command call the same functions (`src/integrations/`,
+`src/identity/settings.ts`); the command acts as the `operator`
+(`OperatorPrincipal`), which only it creates, with a superadmin's rights.
+It reads bodies from stdin, prints only its output on stdout and logs to
+stderr, starts no server or worker, and loads without Sentry.
+
 ## Data
 
 PostgreSQL holds everything except uploaded files, which live in
@@ -44,7 +53,7 @@ PostgreSQL holds everything except uploaded files, which live in
   `ENCRYPTION_KEY`), the last directory sync.
 - `identity_requests`: requests to Meldgrove IAM sent from a ticket, with
   what IAM last said.
-- `audit_log`: changes by admins and superadmins.
+- `audit_log`: changes by admins, superadmins and the operator command.
 
 ## The form
 

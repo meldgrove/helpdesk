@@ -119,9 +119,18 @@ export function createSmtpTransport(options: {
   };
 }
 
+/** Whether the stored settings name everything sending needs; a stored secret is not decrypted here. */
+export function emailConfigured(stored: StoredEmail): boolean {
+  if (!stored.fromAddress) return false;
+  if (stored.provider === "smtp") return Boolean(stored.smtp.host);
+  if (stored.provider === "mailersend") return Boolean(stored.mailersend.tokenEncrypted);
+  return false;
+}
+
 /** The email transport for the stored settings, or null when email is off. */
 export function emailTransportFor(stored: StoredEmail): EmailTransport | null {
-  if (stored.provider === "smtp" && stored.smtp.host && stored.fromAddress) {
+  if (!emailConfigured(stored)) return null;
+  if (stored.provider === "smtp") {
     return createSmtpTransport({
       host: stored.smtp.host,
       port: stored.smtp.port,
@@ -132,14 +141,11 @@ export function emailTransportFor(stored: StoredEmail): EmailTransport | null {
       fromName: stored.fromName,
     });
   }
-  if (stored.provider === "mailersend" && stored.mailersend.tokenEncrypted && stored.fromAddress) {
-    return createMailerSendTransport({
-      token: decryptSecret(stored.mailersend.tokenEncrypted),
-      from: stored.fromAddress,
-      fromName: stored.fromName,
-    });
-  }
-  return null;
+  return createMailerSendTransport({
+    token: decryptSecret(stored.mailersend.tokenEncrypted!),
+    from: stored.fromAddress,
+    fromName: stored.fromName,
+  });
 }
 
 /* Slack ------------------------------------------------------------------ */

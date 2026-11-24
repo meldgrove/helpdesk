@@ -12,6 +12,7 @@
     "test:integration": "vitest run --project integration",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "APP_ROLE=migrate tsx --env-file-if-exists=../../.env.local src/main.ts",
+    "cli": "tsx --env-file-if-exists=../../.env.local src/cli.ts",
     "worker": "APP_ROLE=worker tsx --env-file-if-exists=../../.env.local --import ./src/instrument.ts src/main.ts"
   },
   "dependencies": {

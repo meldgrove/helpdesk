@@ -27,6 +27,9 @@ land in Mailpit at http://localhost:8028 once SMTP is set up in the app
 so the worker runs too (emails, Slack, the Keycloak sync every 15 minutes).
 Use a test workspace and a separate Slack app for Slack.
 
+`npm run cli -- settings list` runs the operator command against the
+development database (`cli help` lists the commands).
+
 ## Checks
 
 ```sh

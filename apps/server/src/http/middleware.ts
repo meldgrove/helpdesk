@@ -8,7 +8,8 @@ import type { UserPrincipal } from "../auth/principal";
 import { hasRole, type Role } from "@helpdesk/shared/roles";
 import { logger } from "../logger";
 import type { AppEnv } from "./env";
-import { AppError, badRequest, forbidden, parseWith, unauthorized } from "./errors";
+import { AppError, forbidden, parseWith, unauthorized } from "./errors";
+import { parseJsonBody, storableText } from "./json";
 
 export const requestId: MiddlewareHandler<AppEnv> = async (c, next) => {
   const incoming = c.req.header("x-request-id");
@@ -79,27 +80,9 @@ export const requireStaff = (c: Context<AppEnv>) => requireRole(c, "operator");
 export const requireAdmin = (c: Context<AppEnv>) => requireRole(c, "admin");
 export const requireSuperadmin = (c: Context<AppEnv>) => requireRole(c, "superadmin");
 
-/** PostgreSQL stores neither NUL characters nor lone surrogates; refuse them instead of failing on the write. */
-function storableText(value: unknown): void {
-  if (typeof value === "string" && (value.includes("\u0000") || !value.isWellFormed())) {
-    throw badRequest("The request contains characters that cannot be stored");
-  }
-}
-
 /** The JSON body validated with a shared schema. */
 export async function jsonBody<T extends z.ZodType>(c: Context<AppEnv>, schema: T): Promise<z.infer<T>> {
-  let body: unknown;
-  try {
-    body = JSON.parse(await c.req.text(), (key, value: unknown) => {
-      storableText(key);
-      storableText(value);
-      return value;
-    });
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw badRequest("The request body must be JSON");
-  }
-  return parseWith(schema, body);
+  return parseJsonBody(await c.req.text(), schema);
 }
 
 export function queryOf<T extends z.ZodType>(c: Context<AppEnv>, schema: T): z.infer<T> {
