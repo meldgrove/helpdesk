@@ -50,7 +50,7 @@ jobs:
       description: "A self-hosted helpdesk for internal requests: one dynamic form with show-if rules, one board for every ticket, roles from Keycloak or any OpenID Connect provider, email and Slack notifications."
       # Releases upload their source maps to this Sentry project, with the
       # SENTRY_AUTH_TOKEN secret (an organization token).
-      sentry_org: meldgrove
+      sentry_org: projecttogether
       sentry_project: helpdesk
     secrets:
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
