@@ -88,8 +88,9 @@ maintainers.
 4. For a release that needs action, put the steps at the top of its notes.
 
 Release builds upload the source maps to the Sentry project
-`meldgrove/helpdesk` with the organization secret `SENTRY_AUTH_TOKEN`
-(Dockerfile). Without the secret, the release warns and uploads nothing.
+`helpdesk` (organization and project in `release.yml`) with the organization
+secret `SENTRY_AUTH_TOKEN` (Dockerfile). Without the secret, the release warns
+and uploads nothing.
 
 ## Data, secrets and privacy
 
